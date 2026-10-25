@@ -120,31 +120,27 @@ struct GlassPanel<Content: View>: View {
     }
 }
 
-/// A pale sky-to-lilac field with slow pastel light drifting across it, for the glass to refract.
-/// The drift is so slow (a cycle takes over a minute) that five frames a second looks continuous;
-/// it stops entirely when the window isn't frontmost or Reduce Motion is on.
+/// A pale sky-to-lilac field with soft pastel light resting across it, for the glass to refract.
+/// It is drawn once and never animates: glass re-blurs whatever is behind it on every frame that
+/// changes, so a still backdrop keeps the window idle when nothing else is moving.
 struct Backdrop: View {
-    @Environment(\.controlActiveState) private var activeState
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     var body: some View {
         ZStack {
             base
-            TimelineView(.animation(minimumInterval: 1.0 / 5, paused: activeState != .key || reduceMotion)) { timeline in
-                let t = timeline.date.timeIntervalSinceReferenceDate
-                GeometryReader { geo in
-                    let w = geo.size.width
-                    let h = geo.size.height
-                    ZStack {
-                        blob(Theme.sky, 640, w * (0.18 + 0.06 * sin(t / 9)), h * (0.22 + 0.05 * cos(t / 11)))
-                        blob(Theme.lilac, 600, w * (0.86 + 0.05 * cos(t / 10)), h * (0.28 + 0.07 * sin(t / 13)))
-                        blob(Theme.mint, 560, w * (0.24 + 0.07 * cos(t / 12)), h * (0.86 + 0.04 * sin(t / 8)))
-                        blob(Theme.peach, 580, w * (0.8 + 0.06 * sin(t / 14)), h * (0.84 + 0.05 * cos(t / 10)))
-                    }
+            GeometryReader { geo in
+                let w = geo.size.width
+                let h = geo.size.height
+                ZStack {
+                    blob(Theme.sky, 640, w * 0.18, h * 0.27)
+                    blob(Theme.lilac, 600, w * 0.91, h * 0.28)
+                    blob(Theme.mint, 560, w * 0.31, h * 0.86)
+                    blob(Theme.peach, 580, w * 0.8, h * 0.89)
                 }
             }
             .opacity(0.7)
         }
+        // Flattened into one bitmap, so the glass samples a single layer instead of five gradients.
+        .drawingGroup()
         .ignoresSafeArea()
         .allowsHitTesting(false)
     }
