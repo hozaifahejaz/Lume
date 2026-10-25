@@ -89,7 +89,11 @@ private struct ProcessRow: View {
     let sort: ProcessList.Sort
     let total: UInt64
     let onQuit: () -> Void
-    @State private var hovering = false
+    @StateObject private var hoverState = ViewState(false)
+    private var hovering: Bool {
+        get { hoverState.value }
+        nonmutating set { hoverState.value = newValue }
+    }
 
     var body: some View {
         HStack(spacing: 14) {

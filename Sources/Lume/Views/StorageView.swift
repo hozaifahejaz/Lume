@@ -60,7 +60,11 @@ struct StorageView: View {
 private struct FolderRow: View {
     let folder: FolderUsage
     let fraction: Double
-    @State private var hovering = false
+    @StateObject private var hoverState = ViewState(false)
+    private var hovering: Bool {
+        get { hoverState.value }
+        nonmutating set { hoverState.value = newValue }
+    }
 
     var body: some View {
         HStack(spacing: 14) {

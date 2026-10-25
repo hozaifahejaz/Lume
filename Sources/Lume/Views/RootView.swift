@@ -19,7 +19,11 @@ enum Page: String, CaseIterable, Identifiable {
 }
 
 struct RootView: View {
-    @State private var section: Page? = .overview
+    @StateObject private var sectionState = ViewState<Page?>(.overview)
+    private var section: Page? {
+        get { sectionState.value }
+        nonmutating set { sectionState.value = newValue }
+    }
     @StateObject private var cleaner = Cleaner()
     @StateObject private var storage = StorageScanner()
     @StateObject private var startup = StartupItems()
@@ -27,7 +31,7 @@ struct RootView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(Page.allCases, selection: $section) { item in
+            List(Page.allCases, selection: $sectionState.value) { item in
                 Label(item.rawValue, systemImage: item.symbol)
                     .font(.system(size: 13, weight: .medium))
                     .padding(.vertical, 3)

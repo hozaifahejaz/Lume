@@ -2,7 +2,7 @@ import SwiftUI
 
 struct CleanView: View {
     @ObservedObject var cleaner: Cleaner
-    @State private var confirming = false
+    @StateObject private var confirmState = ViewState(false)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -38,7 +38,7 @@ struct CleanView: View {
             }
         }
         .task { if cleaner.phase == .idle { await cleaner.scan() } }
-        .confirmationDialog("Remove \(cleaner.selectedTotal.bytes) of files?", isPresented: $confirming) {
+        .confirmationDialog("Remove \(cleaner.selectedTotal.bytes) of files?", isPresented: $confirmState.value) {
             Button("Clean", role: .destructive) { Task { await cleaner.clean() } }
         } message: {
             Text("Caches and logs are recreated automatically. Emptied Trash cannot be recovered.")
@@ -64,7 +64,7 @@ struct CleanView: View {
         case .idle, .scanning, .cleaning:
             ProgressView().controlSize(.small)
         case .ready:
-            Button("Clean") { confirming = true }
+            Button("Clean") { confirmState.value = true }
                 .buttonStyle(PillButtonStyle())
                 .disabled(cleaner.selectedTotal == 0)
         case .done:

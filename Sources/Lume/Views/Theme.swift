@@ -95,3 +95,10 @@ extension Int64 {
 extension UInt64 {
     var bytes: String { Int64(clamping: self).bytes }
 }
+
+/// Local view state held in an ObservableObject. Stands in for `@State`, whose macro
+/// plugin is missing from the Command Line Tools toolchain (it ships only with Xcode).
+final class ViewState<Value>: ObservableObject {
+    @Published var value: Value
+    init(_ value: Value) { self.value = value }
+}
