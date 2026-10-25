@@ -84,7 +84,14 @@ enum MainWindow {
     static var openAction: OpenWindowAction?
 
     static func open() {
-        NSApp.activate(ignoringOtherApps: true)
+        if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
+        // Already open: just bring it forward. openWindow rebuilds the scene list and menus each call,
+        // which made every ⌘1–4 press do a few milliseconds of needless work.
+        if let window = NSApp.windows.first(where: { $0.identifier?.rawValue.hasPrefix("main") == true && $0.isVisible }) {
+            if window.isMiniaturized { window.deminiaturize(nil) }
+            if !window.isKeyWindow { window.makeKeyAndOrderFront(nil) }
+            return
+        }
         openAction?(id: "main")
     }
 }

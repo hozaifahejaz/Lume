@@ -56,12 +56,11 @@ final class ProcessList: ObservableObject {
         refreshTask?.cancel()
         generation += 1
         let current = generation
-        let regularApps = Self.regularApps()
         let previous = Previous(cpuTimes: previousCPUTime, time: previousSampleTime)
         refreshTask = Task {
             // Listing, measuring and grouping a few hundred processes all happens off the main actor.
             let grouped = await Task.detached(priority: .utility) {
-                Self.group(Self.readSample(), regularApps: regularApps, previous: previous)
+                Self.group(Self.readSample(), regularApps: Self.regularApps(), previous: previous)
             }.value
             // A slower, older refresh must never overwrite a newer one.
             guard !Task.isCancelled, current == generation else { return }
@@ -93,7 +92,8 @@ final class ProcessList: ObservableObject {
     }
 
     /// Bundle path to pid for every app with a Dock icon: the ones that can be quit.
-    private static func regularApps() -> [String: Int32] {
+    /// NSWorkspace documents runningApplications as safe to read from any thread.
+    nonisolated private static func regularApps() -> [String: Int32] {
         var apps: [String: Int32] = [:]
         for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
             if let path = app.bundleURL?.path { apps[path] = app.processIdentifier }
