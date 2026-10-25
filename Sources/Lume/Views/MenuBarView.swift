@@ -4,6 +4,7 @@ import AppKit
 /// A compact glance from the menu bar: the same three quiet stats as the Overview.
 struct MenuBarView: View {
     @EnvironmentObject private var monitor: SystemMonitor
+    @EnvironmentObject private var diskSpace: DiskSpace
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -19,7 +20,7 @@ struct MenuBarView: View {
                 stat("Memory", monitor.memory.fraction.percent, monitor.memory.fraction,
                      alert: monitor.pressure == .critical)
                 Hairline(vertical: true).padding(.horizontal, 12)
-                stat("Disk", monitor.disk.fraction.percent, monitor.disk.fraction)
+                stat("Disk", diskSpace.stats.fraction.percent, diskSpace.stats.fraction)
             }
             .fixedSize(horizontal: false, vertical: true)
             .padding(16)

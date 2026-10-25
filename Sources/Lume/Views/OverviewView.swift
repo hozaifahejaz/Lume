@@ -1,48 +1,16 @@
 import SwiftUI
 
+/// The page itself observes only the process list; the parts that change every second
+/// (the headline and the live stats) observe the monitor on their own, so a tick redraws
+/// just them and not the activity rows.
 struct OverviewView: View {
-    @EnvironmentObject private var monitor: SystemMonitor
     @ObservedObject var processes: ProcessList
     let goTo: (Page) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.gap) {
-            PageHeader(title: headline, subtitle: detail) {
-                if monitor.diskNearlyFull {
-                    Button("Free Up Space…") { goTo(.clean) }
-                        .glassButton()
-                }
-            }
-
-            GlassPanel(fill: false) {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(spacing: 0) {
-                        stat("Processor", monitor.cpu.percent,
-                             ["\(ProcessInfo.processInfo.activeProcessorCount) cores", Self.coreKinds], monitor.cpu)
-                        Hairline(vertical: true).padding(.horizontal, 20)
-                        stat("Memory", monitor.memory.used.bytes,
-                             ["of \(monitor.memory.total.bytes)", "Pressure \(monitor.pressure.word)"],
-                             monitor.memory.fraction, alert: monitor.pressure == .critical)
-                        Hairline(vertical: true).padding(.horizontal, 20)
-                        stat("Disk", monitor.disk.used.bytes,
-                             ["of \(monitor.disk.total.bytes)", "\(monitor.disk.available.bytes) available"],
-                             monitor.disk.fraction)
-                    }
-                    .fixedSize(horizontal: false, vertical: true)
-
-                    Hairline()
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Processor, last minute").font(Theme.caption).foregroundStyle(Theme.secondary)
-                            Spacer()
-                            Text(monitor.cpu.percent).font(Theme.digits).foregroundStyle(Theme.secondary)
-                        }
-                        Sparkline(values: monitor.cpuHistory)
-                            .frame(height: 28)
-                    }
-                }
-            }
+            OverviewHeader(goTo: goTo)
+            LiveStats()
 
             GlassPanel {
                 VStack(alignment: .leading, spacing: 8) {
@@ -68,6 +36,81 @@ struct OverviewView: View {
         }
         .onAppear { processes.start() }
         .onDisappear { processes.stop() }
+    }
+}
+
+private struct OverviewHeader: View {
+    @EnvironmentObject private var monitor: SystemMonitor
+    @EnvironmentObject private var diskSpace: DiskSpace
+    let goTo: (Page) -> Void
+
+    var body: some View {
+        PageHeader(title: headline, subtitle: detail) {
+            if diskSpace.stats.nearlyFull {
+                Button("Free Up Space…") { goTo(.clean) }
+                    .glassButton()
+            }
+        }
+    }
+
+    private var headline: String {
+        switch monitor.load {
+        case .smooth: return "Your Mac is running smoothly."
+        case .busy: return "Your Mac is busy."
+        case .heavy: return "Your Mac is under heavy load."
+        }
+    }
+
+    private var detail: String {
+        var parts: [String] = []
+        if monitor.cpu >= 0.7 { parts.append("The processor is busy at \(monitor.cpu.percent).") }
+        switch monitor.pressure {
+        case .normal: break
+        case .warning: parts.append("Memory pressure is elevated.")
+        case .critical: parts.append("Memory pressure is high.")
+        }
+        if parts.isEmpty { parts.append("Processor and memory have plenty of headroom.") }
+        if diskSpace.stats.nearlyFull { parts.append("Disk is nearly full.") }
+        return parts.joined(separator: " ")
+    }
+}
+
+/// Processor, memory and disk, with the last minute of processor use.
+private struct LiveStats: View {
+    @EnvironmentObject private var monitor: SystemMonitor
+    @EnvironmentObject private var diskSpace: DiskSpace
+
+    var body: some View {
+        let disk = diskSpace.stats
+        GlassPanel(fill: false) {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 0) {
+                    stat("Processor", monitor.cpu.percent,
+                         ["\(ProcessInfo.processInfo.activeProcessorCount) cores", Self.coreKinds], monitor.cpu)
+                    Hairline(vertical: true).padding(.horizontal, 20)
+                    stat("Memory", monitor.memory.used.bytes,
+                         ["of \(monitor.memory.total.bytes)", "Pressure \(monitor.pressure.word)"],
+                         monitor.memory.fraction, alert: monitor.pressure == .critical)
+                    Hairline(vertical: true).padding(.horizontal, 20)
+                    stat("Disk", disk.used.bytes,
+                         ["of \(disk.total.bytes)", "\(disk.available.bytes) available"],
+                         disk.fraction)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+
+                Hairline()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Processor, last minute").font(Theme.caption).foregroundStyle(Theme.secondary)
+                        Spacer()
+                        Text(monitor.cpu.percent).font(Theme.digits).foregroundStyle(Theme.secondary)
+                    }
+                    Sparkline(values: monitor.cpuHistory)
+                        .frame(height: 28)
+                }
+            }
+        }
     }
 
     /// `alert` turns the number red; by default that happens past 85%. Memory passes it in,
@@ -115,27 +158,6 @@ struct OverviewView: View {
             return count > 0 && !name.isEmpty ? "\(count) \(name)" : nil
         }.joined(separator: " · ")
     }()
-
-    private var headline: String {
-        switch monitor.load {
-        case .smooth: return "Your Mac is running smoothly."
-        case .busy: return "Your Mac is busy."
-        case .heavy: return "Your Mac is under heavy load."
-        }
-    }
-
-    private var detail: String {
-        var parts: [String] = []
-        if monitor.cpu >= 0.7 { parts.append("The processor is busy at \(monitor.cpu.percent).") }
-        switch monitor.pressure {
-        case .normal: break
-        case .warning: parts.append("Memory pressure is elevated.")
-        case .critical: parts.append("Memory pressure is high.")
-        }
-        if parts.isEmpty { parts.append("Processor and memory have plenty of headroom.") }
-        if monitor.diskNearlyFull { parts.append("Disk is nearly full.") }
-        return parts.joined(separator: " ")
-    }
 }
 
 private struct ProcessRow: View {

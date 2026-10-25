@@ -2,13 +2,13 @@ import SwiftUI
 import AppKit
 
 struct StorageView: View {
-    @EnvironmentObject private var monitor: SystemMonitor
+    @EnvironmentObject private var diskSpace: DiskSpace
     @ObservedObject var scanner: StorageScanner
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.gap) {
-            PageHeader(title: "\(monitor.disk.used.bytes) used of \(monitor.disk.total.bytes)",
-                       subtitle: "\(monitor.disk.available.bytes) available") {
+            PageHeader(title: "\(diskSpace.stats.used.bytes) used of \(diskSpace.stats.total.bytes)",
+                       subtitle: "\(diskSpace.stats.available.bytes) available") {
                 Button { Task { await scanner.rescan() } } label: {
                     Label("Rescan", systemImage: "arrow.clockwise")
                 }
@@ -18,8 +18,8 @@ struct StorageView: View {
 
             GlassPanel(fill: false) {
                 VStack(alignment: .leading, spacing: 16) {
-                    UsageBar(total: monitor.disk.total, segments: scanner.isScanning ? nil : segments,
-                             used: monitor.disk.used)
+                    UsageBar(total: diskSpace.stats.total, segments: scanner.isScanning ? nil : segments,
+                             used: diskSpace.stats.used)
                     legend
                 }
             }
@@ -82,8 +82,8 @@ struct StorageView: View {
     /// The largest folders that are at least 3% of the disk, then "System & other" for the
     /// rest of the used space, so the segments add up exactly to what the disk reports as used.
     private var segments: [UsageSegment] {
-        let used = max(monitor.disk.used, 0)
-        let threshold = Double(monitor.disk.total) * 0.03
+        let used = max(diskSpace.stats.used, 0)
+        let threshold = Double(diskSpace.stats.total) * 0.03
         var shown: [UsageSegment] = []
         var sum: Int64 = 0
         for folder in scanner.folders where Double(folder.size) >= threshold && shown.count < 4 {
@@ -98,13 +98,13 @@ struct StorageView: View {
 
     private var legend: some View {
         let items = scanner.isScanning
-            ? [UsageSegment(id: "used", name: "Used", size: monitor.disk.used, color: Theme.graphite.opacity(0.45))]
+            ? [UsageSegment(id: "used", name: "Used", size: diskSpace.stats.used, color: Theme.graphite.opacity(0.45))]
             : segments
         return FlowRow(spacing: 24, lineSpacing: 8) {
             ForEach(items) { segment in
                 legendItem(segment.name, segment.size, Circle().fill(segment.color))
             }
-            legendItem("Free", monitor.disk.available,
+            legendItem("Free", diskSpace.stats.available,
                        Circle().fill(Theme.track).overlay(Circle().strokeBorder(Theme.hairline, lineWidth: 0.5)))
         }
     }

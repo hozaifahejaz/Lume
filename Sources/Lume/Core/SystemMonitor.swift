@@ -2,30 +2,24 @@ import Foundation
 import AppKit
 import Darwin
 
-/// Samples CPU, memory and memory pressure once a second using Mach APIs; disk space every 30 seconds, off the main actor.
+/// Samples CPU, memory and memory pressure once a second using Mach APIs.
 /// With no window on screen (only the menu bar icon), sampling eases off to every 5 seconds.
+/// Disk space lives in its own `DiskSpace`, so pages that only show the disk don't redraw every second.
 @MainActor
 final class SystemMonitor: ObservableObject {
     @Published private(set) var cpu: Double = 0
     @Published private(set) var cpuHistory: [Double] = Array(repeating: 0, count: 60)
     @Published private(set) var memory = MemoryStats()
     @Published private(set) var pressure: Pressure = .normal
-    @Published private(set) var disk = DiskStats()
+    let diskSpace = DiskSpace()
 
     private var timer: Timer?
-    private var diskTimer: Timer?
     private var previousTicks: [CPUTicks] = []
     private var interval: TimeInterval = 0
     private var observers: [NSObjectProtocol] = []
 
     init() {
         sample()
-        refreshDisk()
-        let diskTimer = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refreshDisk() }
-        }
-        RunLoop.main.add(diskTimer, forMode: .common)
-        self.diskTimer = diskTimer
         schedule(every: 1)
 
         // Any window appearing, hiding, closing or being covered can change whether anyone is looking.
@@ -67,13 +61,6 @@ final class SystemMonitor: ObservableObject {
         if seconds == 1 { sample() }
     }
 
-    /// Re-reads free space in the background; the volume query can be slow.
-    func refreshDisk() {
-        Task {
-            disk = await Task.detached { Self.readDisk() }.value
-        }
-    }
-
     func sample() {
         let ticks = Self.readCPUTicks()
         if !previousTicks.isEmpty, previousTicks.count == ticks.count {
@@ -84,13 +71,19 @@ final class SystemMonitor: ObservableObject {
                 busy += b
                 total += b + Double(now.idle &- before.idle)
             }
-            cpu = total > 0 ? busy / total : 0
-            cpuHistory.removeFirst()
-            cpuHistory.append(cpu)
+            let value = total > 0 ? busy / total : 0
+            if value != cpu { cpu = value }
+            var history = cpuHistory
+            history.removeFirst()
+            history.append(value)
+            if history != cpuHistory { cpuHistory = history }
         }
         previousTicks = ticks
-        memory = Self.readMemory()
-        pressure = Self.readPressure()
+        // Assign only what moved, so an unchanged reading doesn't redraw anything.
+        let memory = Self.readMemory()
+        if memory != self.memory { self.memory = memory }
+        let pressure = Self.readPressure()
+        if pressure != self.pressure { self.pressure = pressure }
     }
 
     // MARK: CPU
@@ -123,7 +116,7 @@ final class SystemMonitor: ObservableObject {
 
     // MARK: Memory
 
-    struct MemoryStats {
+    struct MemoryStats: Equatable {
         var total: UInt64 = ProcessInfo.processInfo.physicalMemory
         var used: UInt64 = 0
         var wired: UInt64 = 0
@@ -173,17 +166,33 @@ final class SystemMonitor: ObservableObject {
         guard sysctlbyname("kern.memorystatus_vm_pressure_level", &level, &size, nil, 0) == 0 else { return .normal }
         return Pressure(rawValue: Int(level)) ?? .normal
     }
+}
 
-    // MARK: Disk
+/// Free and used space on the startup disk, read every 30 seconds off the main actor.
+@MainActor
+final class DiskSpace: ObservableObject {
+    @Published private(set) var stats = DiskStats()
+    private var timer: Timer?
 
-    struct DiskStats {
-        var total: Int64 = 0
-        var available: Int64 = 0
-        var used: Int64 { total - available }
-        var fraction: Double { total > 0 ? Double(used) / Double(total) : 0 }
+    init() {
+        refresh()
+        let timer = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refresh() }
+        }
+        timer.tolerance = 3
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
     }
 
-    nonisolated private static func readDisk() -> DiskStats {
+    /// Re-reads free space in the background; the volume query can be slow.
+    func refresh() {
+        Task {
+            let stats = await Task.detached { Self.read() }.value
+            if stats != self.stats { self.stats = stats }
+        }
+    }
+
+    nonisolated private static func read() -> DiskStats {
         let url = URL(fileURLWithPath: "/")
         let keys: Set<URLResourceKey> = [.volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey]
         guard let values = try? url.resourceValues(forKeys: keys) else { return DiskStats() }
@@ -192,4 +201,14 @@ final class SystemMonitor: ObservableObject {
             available: values.volumeAvailableCapacityForImportantUsage ?? 0
         )
     }
+}
+
+struct DiskStats: Equatable {
+    var total: Int64 = 0
+    var available: Int64 = 0
+    var used: Int64 { total - available }
+    var fraction: Double { total > 0 ? Double(used) / Double(total) : 0 }
+
+    /// Under 10% free: the one point where disk space starts to matter for speed.
+    var nearlyFull: Bool { total > 0 && Double(available) / Double(total) < 0.1 }
 }

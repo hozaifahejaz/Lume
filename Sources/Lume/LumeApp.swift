@@ -19,6 +19,7 @@ struct LumeApp: App {
         Window("Lume", id: "main") {
             RootView()
                 .environmentObject(monitor)
+                .environmentObject(monitor.diskSpace)
                 .environmentObject(navigator)
                 .frame(minWidth: 960, minHeight: 680)
         }
@@ -47,6 +48,7 @@ struct LumeApp: App {
         MenuBarExtra {
             MenuBarView()
                 .environmentObject(monitor)
+                .environmentObject(monitor.diskSpace)
         } label: {
             MenuBarLabel(meter: meter)
         }

@@ -2,7 +2,7 @@ import SwiftUI
 
 struct CleanView: View {
     @ObservedObject var cleaner: Cleaner
-    @EnvironmentObject private var monitor: SystemMonitor
+    @EnvironmentObject private var diskSpace: DiskSpace
     /// The freed figure as it counts up after a clean.
     @StateObject private var shownFreed = ViewState<Int64>(0)
     @StateObject private var confirming = ViewState(false)
@@ -82,7 +82,7 @@ struct CleanView: View {
         }
         .onChange(of: cleaner.phase) { _, phase in
             if case .done(let freed) = phase {
-                monitor.refreshDisk()
+                diskSpace.refresh()
                 countUp(to: freed)
             }
         }

@@ -287,11 +287,6 @@ extension SystemMonitor {
         case .heavy: return "Under heavy load"
         }
     }
-
-    /// Under 10% free: the one point where disk space starts to matter for speed.
-    var diskNearlyFull: Bool {
-        disk.total > 0 && Double(disk.available) / Double(disk.total) < 0.1
-    }
 }
 
 extension Double {

@@ -171,12 +171,12 @@ final class MenuBarMeter: ObservableObject {
         let timer = Timer(timeInterval: 2, repeats: true) { [weak self, weak monitor] _ in
             Task { @MainActor in
                 guard let self, let monitor else { return }
-                self.update([monitor.cpu, monitor.memory.fraction, monitor.disk.fraction])
+                self.update([monitor.cpu, monitor.memory.fraction, monitor.diskSpace.stats.fraction])
             }
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
-        update([monitor.cpu, monitor.memory.fraction, monitor.disk.fraction])
+        update([monitor.cpu, monitor.memory.fraction, monitor.diskSpace.stats.fraction])
     }
 
     private func update(_ values: [Double]) {
