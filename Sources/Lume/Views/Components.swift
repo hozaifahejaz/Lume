@@ -107,33 +107,62 @@ enum AppIcons {
     }
 }
 
-/// The menu bar mark: three concentric arcs echoing the app icon, drawn as a template image.
+/// The menu bar mark: three rounded bars — processor, memory, disk — that double as a quiet live meter.
+/// Drawn as a template image so macOS tints it for light, dark and highlighted menu bars.
 enum MenuBarIcon {
-    static let image: NSImage = {
-        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
-            let center = NSPoint(x: rect.midX, y: rect.midY)
-            let rings: [(radius: CGFloat, sweep: CGFloat)] = [(7.4, 280), (4.7, 220)]
-            for ring in rings {
-                let track = NSBezierPath()
-                track.appendArc(withCenter: center, radius: ring.radius, startAngle: 0, endAngle: 360)
-                track.lineWidth = 1.6
-                NSColor.black.withAlphaComponent(0.3).setStroke()
-                track.stroke()
+    /// A resting shape for places that don't need live values.
+    static let image = make(values: [0.55, 0.8, 0.4])
 
-                let arc = NSBezierPath()
-                arc.appendArc(withCenter: center, radius: ring.radius, startAngle: 90,
-                              endAngle: 90 - ring.sweep, clockwise: true)
-                arc.lineWidth = 1.6
-                arc.lineCapStyle = .round
-                NSColor.black.setStroke()
-                arc.stroke()
+    static func make(values: [Double]) -> NSImage {
+        let barWidth: CGFloat = 2.5, gap: CGFloat = 2, height: CGFloat = 14
+        let width = barWidth * 3 + gap * 2
+        let canvas = NSSize(width: ceil(width) + 2, height: 18)
+        let image = NSImage(size: canvas, flipped: false) { rect in
+            // Whole points at the left and bottom keep 2.5pt bars on exact pixels at @2x.
+            let originX = floor((rect.width - width) / 2)
+            let originY: CGFloat = 2
+            for (index, value) in values.prefix(3).enumerated() {
+                let x = originX + CGFloat(index) * (barWidth + gap)
+                let track = NSRect(x: x, y: originY, width: barWidth, height: height)
+                NSColor.black.withAlphaComponent(0.35).setFill()
+                NSBezierPath(roundedRect: track, xRadius: barWidth / 2, yRadius: barWidth / 2).fill()
+
+                // Snap the fill to half points so its top edge lands on a pixel.
+                let level = (max(barWidth, height * CGFloat(min(max(value, 0), 1))) * 2).rounded() / 2
+                let fill = NSRect(x: x, y: originY, width: barWidth, height: level)
+                NSColor.black.setFill()
+                NSBezierPath(roundedRect: fill, xRadius: barWidth / 2, yRadius: barWidth / 2).fill()
             }
-            let dot = NSBezierPath(ovalIn: NSRect(x: center.x - 2, y: center.y - 2, width: 4, height: 4))
-            NSColor.black.setFill()
-            dot.fill()
             return true
         }
         image.isTemplate = true
+        image.accessibilityDescription = "Lume"
         return image
-    }()
+    }
+}
+
+/// Redraws the menu bar meter every 2 seconds, and only when a value has moved by 3% or more.
+@MainActor
+final class MenuBarMeter: ObservableObject {
+    @Published private(set) var image = MenuBarIcon.image
+    private var shown: [Double] = []
+    private var timer: Timer?
+
+    init(monitor: SystemMonitor) {
+        let timer = Timer(timeInterval: 2, repeats: true) { [weak self, weak monitor] _ in
+            Task { @MainActor in
+                guard let self, let monitor else { return }
+                self.update([monitor.cpu, monitor.memory.fraction, monitor.disk.fraction])
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+        update([monitor.cpu, monitor.memory.fraction, monitor.disk.fraction])
+    }
+
+    private func update(_ values: [Double]) {
+        guard shown.isEmpty || zip(values, shown).contains(where: { abs($0 - $1) >= 0.03 }) else { return }
+        shown = values
+        image = MenuBarIcon.make(values: values)
+    }
 }

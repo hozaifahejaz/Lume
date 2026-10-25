@@ -4,7 +4,14 @@ import AppKit
 @main
 struct LumeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var monitor = SystemMonitor()
+    @StateObject private var monitor: SystemMonitor
+    @StateObject private var meter: MenuBarMeter
+
+    init() {
+        let monitor = SystemMonitor()
+        _monitor = StateObject(wrappedValue: monitor)
+        _meter = StateObject(wrappedValue: MenuBarMeter(monitor: monitor))
+    }
 
     var body: some Scene {
         // A single window with an id, so the menu bar can reopen it after it is closed.
@@ -24,7 +31,7 @@ struct LumeApp: App {
             MenuBarView()
                 .environmentObject(monitor)
         } label: {
-            MenuBarLabel()
+            MenuBarLabel(meter: meter)
         }
         .menuBarExtraStyle(.window)
     }
@@ -61,10 +68,11 @@ enum MainWindow {
 
 /// The menu bar icon; it's always on screen, so it also captures the openWindow action at launch.
 private struct MenuBarLabel: View {
+    @ObservedObject var meter: MenuBarMeter
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        Image(nsImage: MenuBarIcon.image)
+        Image(nsImage: meter.image)
             .onAppear { MainWindow.openAction = openWindow }
     }
 }

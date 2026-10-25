@@ -11,75 +11,52 @@ func color(_ hex: UInt32, _ opacity: Double = 1) -> Color {
           opacity: opacity)
 }
 
-/// Drawn on Apple's 1024pt icon grid: an 824pt squircle tile with a glass lens holding three gauge rings.
+/// Drawn on Apple's 1024pt icon grid: an 824pt light squircle holding three graphite bars,
+/// the same mark as the menu bar meter, with a soft glass sheen.
 struct LumeIcon: View {
     private let tile = RoundedRectangle(cornerRadius: 186, style: .continuous)
+    private let levels: [CGFloat] = [0.55, 0.82, 0.4]
 
     var body: some View {
         ZStack {
             tile
-                .fill(LinearGradient(colors: [color(0xB9D5FF), color(0xC9C4FF), color(0xE2CFFF)],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
-                .overlay(tile.fill(RadialGradient(colors: [Color.white.opacity(0.65), .clear],
-                                                  center: UnitPoint(x: 0.25, y: 0.1),
-                                                  startRadius: 0, endRadius: 640)))
-                .overlay(tile.fill(RadialGradient(colors: [color(0xBFF0DE, 0.55), .clear],
-                                                  center: UnitPoint(x: 0.85, y: 0.95),
-                                                  startRadius: 0, endRadius: 420)))
-                .overlay(tile.strokeBorder(LinearGradient(colors: [Color.white.opacity(0.9), Color.white.opacity(0.2)],
+                .fill(LinearGradient(colors: [color(0xFFFFFF), color(0xF1F2F5), color(0xE3E5EA)],
+                                     startPoint: .top, endPoint: .bottom))
+                .overlay(tile.fill(RadialGradient(colors: [color(0xDCE8FF, 0.45), .clear],
+                                                  center: UnitPoint(x: 0.2, y: 0.05),
+                                                  startRadius: 0, endRadius: 620)))
+                .overlay(tile.strokeBorder(LinearGradient(colors: [Color.white, color(0xC9CCD3, 0.6)],
                                                           startPoint: .top, endPoint: .bottom), lineWidth: 3))
                 .frame(width: 824, height: 824)
-                .shadow(color: color(0x1A2550, 0.22), radius: 20, y: 12)
+                .shadow(color: color(0x1C1C1E, 0.18), radius: 18, y: 10)
 
-            lens
+            HStack(alignment: .bottom, spacing: 64) {
+                ForEach(0..<3, id: \.self) { index in
+                    bar(levels[index])
+                }
+            }
+            .frame(height: 440, alignment: .bottom)
+            .offset(y: 8)
+
+            // A gentle sheen across the upper half, like light on glass.
+            tile
+                .fill(LinearGradient(colors: [Color.white.opacity(0.55), Color.white.opacity(0)],
+                                     startPoint: .top, endPoint: .center))
+                .frame(width: 824, height: 824)
+                .blendMode(.screen)
         }
         .frame(width: 1024, height: 1024)
     }
 
-    private var lens: some View {
-        ZStack {
-            // Glass body with a soft drop shadow onto the tile.
-            Circle()
-                .fill(RadialGradient(colors: [Color.white.opacity(0.97), color(0xF1F5FF, 0.92), color(0xD5DFFA, 0.95)],
-                                     center: UnitPoint(x: 0.36, y: 0.3), startRadius: 0, endRadius: 340))
-                .shadow(color: color(0x2B3A7A, 0.3), radius: 28, y: 20)
-
-            // Inner shadow along the lower rim gives the lens depth.
-            Circle()
-                .strokeBorder(LinearGradient(colors: [Color.clear, color(0x5C6CA8, 0.35)],
-                                             startPoint: .top, endPoint: .bottom), lineWidth: 22)
-                .blur(radius: 9)
-                .clipShape(Circle())
-
-            ring(diameter: 420, fraction: 0.74, hue: color(0x0A84FF))
-            ring(diameter: 324, fraction: 0.58, hue: color(0x5E5CE6))
-            ring(diameter: 228, fraction: 0.42, hue: color(0x30B0C7))
-
-            // Specular highlight across the top of the glass.
-            Ellipse()
-                .fill(LinearGradient(colors: [Color.white.opacity(0.85), Color.white.opacity(0)],
-                                     startPoint: .top, endPoint: .bottom))
-                .frame(width: 400, height: 200)
-                .offset(y: -158)
-
-            Circle()
-                .strokeBorder(LinearGradient(colors: [Color.white, Color.white.opacity(0.25)],
-                                             startPoint: .top, endPoint: .bottom), lineWidth: 5)
+    private func bar(_ level: CGFloat) -> some View {
+        ZStack(alignment: .bottom) {
+            Capsule().fill(color(0x3A3A3C, 0.1))
+            Capsule()
+                .fill(LinearGradient(colors: [color(0x48484A), color(0x2C2C2E)], startPoint: .top, endPoint: .bottom))
+                .frame(height: 440 * level)
+                .shadow(color: color(0x000000, 0.18), radius: 6, y: 4)
         }
-        .frame(width: 568, height: 568)
-    }
-
-    private func ring(diameter: CGFloat, fraction: Double, hue: Color) -> some View {
-        ZStack {
-            Circle().stroke(hue.opacity(0.13), lineWidth: 34)
-            Circle()
-                .trim(from: 0, to: fraction)
-                .stroke(LinearGradient(colors: [hue.opacity(0.7), hue], startPoint: .topLeading, endPoint: .bottomTrailing),
-                        style: StrokeStyle(lineWidth: 34, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                .shadow(color: hue.opacity(0.35), radius: 8, y: 5)
-        }
-        .frame(width: diameter, height: diameter)
+        .frame(width: 92, height: 440)
     }
 }
 
