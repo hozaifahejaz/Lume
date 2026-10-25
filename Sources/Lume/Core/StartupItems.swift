@@ -10,6 +10,8 @@ struct StartupItem: Identifiable, Hashable {
     var isEnabled: Bool
     /// The name of the app the helper belongs to, when its program lives inside one.
     var appName: String? = nil
+    /// Set when the app reinstalled a helper the user had paused.
+    var reenabledBy: String? = nil
 
     var displayName: String {
         if let appName { return appName }
@@ -26,6 +28,10 @@ struct StartupItem: Identifiable, Hashable {
 @MainActor
 final class StartupItems: ObservableObject {
     @Published private(set) var items: [StartupItem] = []
+    /// Helpers whose plist is being moved; their switches wait until it's done.
+    @Published private(set) var busy: Set<URL> = []
+    /// Labels an app turned back on behind Lume's back, with who did it, kept for this session.
+    private var reenabled: [String: String] = [:]
 
     private let fm = FileManager.default
     private var userAgents: URL { fm.homeDirectoryForCurrentUser.appending(path: "Library/LaunchAgents") }
@@ -33,20 +39,34 @@ final class StartupItems: ObservableObject {
     private let systemAgents = URL(fileURLWithPath: "/Library/LaunchAgents")
 
     func reload() {
-        var result: [StartupItem] = []
-        result += read(userAgents, user: true, enabled: true)
-        result += read(userDisabled, user: true, enabled: false)
-        result += read(systemAgents, user: false, enabled: true)
+        var live = read(userAgents, user: true, enabled: true)
+        var paused = read(userDisabled, user: true, enabled: false)
+
+        // An app that reinstalled a helper the user paused: the live copy wins, the stale paused one goes.
+        let liveLabels = Set(live.map(\.label))
+        for stale in paused where liveLabels.contains(stale.label) {
+            try? fm.removeItem(at: stale.url)
+            reenabled[stale.label] = stale.appName ?? stale.displayName
+        }
+        paused.removeAll { liveLabels.contains($0.label) }
+        for index in live.indices {
+            live[index].reenabledBy = reenabled[live[index].label]
+        }
+
+        let result = live + paused + read(systemAgents, user: false, enabled: true)
         items = result.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
     }
 
     func setEnabled(_ item: StartupItem, _ enabled: Bool) {
-        guard item.isUserScope, item.isEnabled != enabled else { return }
+        guard item.isUserScope, item.isEnabled != enabled, !busy.contains(item.url) else { return }
         let source = item.url
         let destination = (enabled ? userAgents : userDisabled).appending(path: source.lastPathComponent)
+        busy.insert(source)
+        if !enabled { reenabled[item.label] = nil }
         Task {
             let moved = await Task.detached { Self.move(source, to: destination, enabling: enabled) }.value
             if !moved { NSSound.beep() }
+            busy.remove(source)
             reload()
         }
     }

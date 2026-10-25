@@ -72,11 +72,18 @@ private struct StartupRow: View {
                     .font(Theme.body.weight(.medium))
                     .foregroundStyle(item.isEnabled ? Theme.ink : Theme.secondary)
                     .lineLimit(1)
-                Text(item.label)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Theme.tertiary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                if let app = item.reenabledBy {
+                    Text("Turned back on by \(app)")
+                        .font(Theme.caption)
+                        .foregroundStyle(Theme.secondary)
+                        .lineLimit(1)
+                } else {
+                    Text(item.label)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(Theme.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
             }
             Spacer(minLength: 16)
             Button { items.reveal(item) } label: {
@@ -86,9 +93,10 @@ private struct StartupRow: View {
             }
             .buttonStyle(.plain)
             .help("Show in Finder")
+            .accessibilityLabel("Show \(item.displayName) in Finder")
 
             if item.isUserScope {
-                Toggle("", isOn: Binding(
+                Toggle(item.displayName, isOn: Binding(
                     get: { item.isEnabled },
                     set: { items.setEnabled(item, $0) }
                 ))
@@ -96,8 +104,11 @@ private struct StartupRow: View {
                 .controlSize(.small)
                 .labelsHidden()
                 .tint(Theme.graphite)
+                .disabled(items.busy.contains(item.url))
+                .accessibilityLabel(item.displayName)
             } else {
-                Text("Managed by System")
+                // /Library/LaunchAgents holds third-party helpers installed for every account.
+                Text("All users")
                     .font(Theme.caption)
                     .foregroundStyle(Theme.tertiary)
             }
