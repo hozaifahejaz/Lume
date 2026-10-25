@@ -204,8 +204,8 @@ private struct FolderRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            AppIconView(image: NSWorkspace.shared.icon(
-                forFile: folder.isHiddenGroup ? FileManager.default.homeDirectoryForCurrentUser.path : folder.url.path))
+            AppIconView(image: AppIcons.forFile(
+                folder.isHiddenGroup ? FileManager.default.homeDirectoryForCurrentUser.path : folder.url.path))
             Text(folder.name)
                 .font(Theme.body)
                 .foregroundStyle(Theme.ink)

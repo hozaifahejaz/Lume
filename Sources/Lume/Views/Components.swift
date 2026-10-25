@@ -77,13 +77,26 @@ extension View {
     func hoverWash() -> some View { modifier(HoverWash()) }
 }
 
-/// Finds the app behind a process or a launch agent and caches its icon.
+/// Finds the app behind a process or a launch agent, and Finder's icon for a file, caching each
+/// answer (including "none") so a redraw never touches the disk or the kernel again.
 @MainActor
 enum AppIcons {
-    private static var cache: [String: NSImage] = [:]
+    private static var apps: [String: NSImage?] = [:]
+    private static var processes: [String: NSImage?] = [:]
+    private static var files: [String: NSImage] = [:]
 
     /// Prefers the app path already known from grouping; asks the kernel only when there isn't one.
     static func forProcess(_ pid: Int32, appPath: String? = nil) -> NSImage? {
+        // Keyed by pid and app, so a reused pid that now belongs to something else looks again.
+        let key = "\(pid)|\(appPath ?? "")"
+        if let cached = processes[key] { return cached }
+        let image = lookUp(pid, appPath: appPath)
+        if processes.count > 2000 { processes.removeAll() }
+        processes[key] = image
+        return image
+    }
+
+    private static func lookUp(_ pid: Int32, appPath: String?) -> NSImage? {
         if let appPath, let image = forPath(appPath) { return image }
         var buffer = [CChar](repeating: 0, count: 4096)
         if proc_pidpath(pid, &buffer, UInt32(buffer.count)) > 0,
@@ -101,10 +114,18 @@ enum AppIcons {
         let parts = path.split(separator: "/", omittingEmptySubsequences: false)
         guard let index = parts.firstIndex(where: { $0.hasSuffix(".app") }) else { return nil }
         let appPath = parts[...index].joined(separator: "/")
-        if let cached = cache[appPath] { return cached }
-        guard FileManager.default.fileExists(atPath: appPath) else { return nil }
-        let image = NSWorkspace.shared.icon(forFile: appPath)
-        cache[appPath] = image
+        if let cached = apps[appPath] { return cached }
+        let image = FileManager.default.fileExists(atPath: appPath) ? NSWorkspace.shared.icon(forFile: appPath) : nil
+        apps[appPath] = image
+        return image
+    }
+
+    /// Finder's icon for any file or folder.
+    static func forFile(_ path: String) -> NSImage {
+        if let cached = files[path] { return cached }
+        let image = NSWorkspace.shared.icon(forFile: path)
+        if files.count > 1000 { files.removeAll() }
+        files[path] = image
         return image
     }
 }
