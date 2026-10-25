@@ -22,6 +22,20 @@ struct SettingsView: View {
                     Text("Icon").tag(false)
                     Text("Icon and processor %").tag(true)
                 }
+            } footer: {
+                // A quiet credit beneath the last group, like the fine print at the foot of an About pane.
+                HStack(spacing: 4) {
+                    Text("Made with")
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 9))
+                        .accessibilityLabel("love")
+                    Text("by Huzaifa")
+                }
+                .font(Theme.caption)
+                .foregroundStyle(Theme.tertiary)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 8)
+                .accessibilityElement(children: .combine)
             }
         }
         .formStyle(.grouped)
