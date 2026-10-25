@@ -3,8 +3,14 @@ import SwiftUI
 struct CleanView: View {
     @ObservedObject var cleaner: Cleaner
     @EnvironmentObject private var monitor: SystemMonitor
+    /// The freed figure as it counts up after a clean.
+    @StateObject private var shownFreed = ViewState<Int64>(0)
+    @StateObject private var confirming = ViewState(false)
 
     var body: some View {
+        let general = cleaner.categories.filter { $0.group == .general }
+        let developer = cleaner.categories.filter { $0.group == .developer }
+
         VStack(alignment: .leading, spacing: Theme.gap) {
             PageHeader(title: headline,
                        subtitle: "Caches and logs your Mac and apps recreate on their own when they need them.")
@@ -12,14 +18,17 @@ struct CleanView: View {
             HStack(alignment: .top, spacing: Theme.gap) {
                 GlassPanel {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("What to clean")
-                            .font(Theme.sectionTitle)
-                            .foregroundStyle(Theme.ink)
-                            .padding(.horizontal, 8)
-                            .frame(height: 24)
-                        ForEach(Array(cleaner.categories.enumerated()), id: \.element.id) { index, category in
+                        sectionTitle("What to clean")
+                        ForEach(Array(general.enumerated()), id: \.element.id) { index, category in
                             if index > 0 { Hairline().padding(.leading, 48) }
                             row(category)
+                        }
+                        if !developer.isEmpty {
+                            sectionTitle("Developer").padding(.top, 12)
+                            ForEach(Array(developer.enumerated()), id: \.element.id) { index, category in
+                                if index > 0 { Hairline().padding(.leading, 48) }
+                                row(category, compact: true)
+                            }
                         }
                         if !cleaner.unreadable.isEmpty {
                             Label("Locked folders need Full Disk Access in System Settings › Privacy & Security.",
@@ -39,7 +48,7 @@ struct CleanView: View {
                         Text(bigNumber)
                             .font(Theme.number)
                             .foregroundStyle(Theme.ink)
-                            .contentTransition(.numericText(countsDown: true))
+                            .contentTransition(.numericText(countsDown: !isDone))
                             .lineLimit(1)
                             .minimumScaleFactor(0.6)
                         action.padding(.top, 20)
@@ -49,6 +58,13 @@ struct CleanView: View {
                             .multilineTextAlignment(.center)
                             .padding(.top, 4)
                         Spacer(minLength: 0)
+                        if let tally {
+                            Text(tally)
+                                .font(Theme.caption)
+                                .foregroundStyle(Theme.tertiary)
+                                .multilineTextAlignment(.center)
+                                .contentTransition(.numericText())
+                        }
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -60,9 +76,61 @@ struct CleanView: View {
         }
         .animation(.smooth(duration: 0.6), value: cleaner.phase)
         .animation(.smooth(duration: 0.6), value: cleaner.selectedTotal)
-        .task { if cleaner.phase == .idle { await cleaner.scan() } }
+        .animation(.smooth(duration: 0.4), value: cleaner.categories.map(\.id))
+        .task {
+            if cleaner.phase == .idle { await cleaner.scan() } else { await cleaner.refreshIfStale() }
+        }
         .onChange(of: cleaner.phase) { _, phase in
-            if case .done = phase { monitor.refreshDisk() }
+            if case .done(let freed) = phase {
+                monitor.refreshDisk()
+                countUp(to: freed)
+            }
+        }
+        .onAppear {
+            if case .done(let freed) = cleaner.phase { shownFreed.value = freed }
+        }
+        // ⌘⌫: the keyboard path to cleaning, confirmed in an ordinary dialog instead of a long press.
+        .background {
+            Button("Clean…") { if canClean { confirming.value = true } }
+                .keyboardShortcut(.delete, modifiers: .command)
+                .opacity(0)
+                .accessibilityHidden(true)
+        }
+        .confirmationDialog("Clean \(cleaner.selectedTotal.bytes)?", isPresented: $confirming.value) {
+            Button("Clean", role: .destructive) { Task { await cleaner.clean() } }
+        } message: {
+            Text("Your Mac and apps recreate these files when they need them.")
+        }
+    }
+
+    private var isDone: Bool {
+        if case .done = cleaner.phase { return true }
+        return false
+    }
+
+    private var canClean: Bool { cleaner.phase == .ready && cleaner.selectedTotal > 0 }
+
+    private func sectionTitle(_ title: String) -> some View {
+        Text(title)
+            .font(Theme.sectionTitle)
+            .foregroundStyle(Theme.ink)
+            .padding(.horizontal, 8)
+            .frame(height: 24)
+    }
+
+    /// Rolls the freed figure up from zero over about a second, easing out.
+    private func countUp(to freed: Int64) {
+        shownFreed.value = 0
+        Task { @MainActor in
+            let steps = 14
+            for step in 1...steps {
+                try? await Task.sleep(for: .milliseconds(55))
+                let t = Double(step) / Double(steps)
+                let eased = 1 - pow(1 - t, 3)
+                withAnimation(.snappy(duration: 0.2)) {
+                    shownFreed.value = step == steps ? freed : Int64(Double(freed) * eased)
+                }
+            }
         }
     }
 
@@ -70,27 +138,30 @@ struct CleanView: View {
         switch cleaner.phase {
         case .idle, .scanning: return "Looking for files to clear…"
         case .cleaning: return "Cleaning…"
-        case .done(let freed): return "Freed \(freed.bytes)."
+        case .done(let freed): return freed > 0 ? "Freed \(freed.bytes)." : "Nothing more to clear."
         case .ready:
-            let total = cleaner.categories.compactMap { cleaner.sizes[$0.id] }.reduce(0, +)
-            // In-use and protected files are skipped, so this is an upper bound.
-            return total > 0 ? "Up to \(total.bytes) can be cleared." : "Nothing to clear right now."
+            // Everything found; the big number on the right is what's selected of it.
+            let total = cleaner.foundTotal
+            return total > 0 ? "\(total.bytes) found." : "Nothing to clear right now."
         }
     }
 
-    private var eyebrow: String {
-        if case .done = cleaner.phase { return "Freed" }
-        return "Selected"
-    }
+    private var eyebrow: String { isDone ? "Freed" : "Selected" }
 
     private var footnote: String {
-        if case .done = cleaner.phase { return "Your Mac rebuilds what it needs, when it needs it." }
-        return "Press and hold to confirm."
+        isDone ? "Your Mac rebuilds what it needs, when it needs it." : "Press and hold, or press ⌘⌫."
     }
 
     private var bigNumber: String {
-        if case .done(let freed) = cleaner.phase { return freed.bytes }
-        return cleaner.selectedTotal.bytes
+        isDone ? shownFreed.value.bytes : cleaner.selectedTotal.bytes
+    }
+
+    /// "Lume has freed 38 GB since October", once anything has been freed.
+    private var tally: String? {
+        guard cleaner.lifetimeFreed > 0, let since = cleaner.tallySince else { return nil }
+        let sameYear = Calendar.current.isDate(since, equalTo: Date(), toGranularity: .year)
+        let month = since.formatted(sameYear ? .dateTime.month(.wide) : .dateTime.month(.wide).year())
+        return "Lume has freed \(cleaner.lifetimeFreed.bytes) since \(month)."
     }
 
     @ViewBuilder private var action: some View {
@@ -101,16 +172,13 @@ struct CleanView: View {
                 .controlSize(.large)
                 .frame(height: 148)
         default:
-            HoldButton(
-                enabled: cleaner.phase == .ready && cleaner.selectedTotal > 0,
-                busy: cleaner.phase != .ready
-            ) {
+            HoldButton(enabled: canClean, busy: cleaner.phase != .ready) {
                 Task { await cleaner.clean() }
             }
         }
     }
 
-    private func row(_ category: JunkCategory) -> some View {
+    private func row(_ category: JunkCategory, compact: Bool = false) -> some View {
         let missing = cleaner.missing.contains(category.id)
         let locked = cleaner.unreadable.contains(category.id)
         let isOn = Binding(
@@ -120,12 +188,22 @@ struct CleanView: View {
             }
         )
         return HStack(spacing: 12) {
-            IconTile(symbol: category.symbol)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(category.name).font(Theme.body.weight(.medium)).foregroundStyle(Theme.ink)
-                Text(category.detail).font(Theme.caption).foregroundStyle(Theme.secondary)
+            IconTile(symbol: category.symbol, size: compact ? 24 : Theme.tileSize)
+                .frame(width: Theme.tileSize)
+            if compact {
+                // One line: developer rows stay short so the panel never needs to scroll.
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(category.name).font(Theme.body.weight(.medium)).foregroundStyle(Theme.ink)
+                    Text(category.detail).font(Theme.caption).foregroundStyle(Theme.secondary)
+                }
+                .lineLimit(1)
+            } else {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(category.name).font(Theme.body.weight(.medium)).foregroundStyle(Theme.ink)
+                    Text(category.detail).font(Theme.caption).foregroundStyle(Theme.secondary)
+                }
             }
-            Spacer()
+            Spacer(minLength: 12)
             if missing {
                 Text("Not found")
                     .font(Theme.caption)
@@ -138,17 +216,19 @@ struct CleanView: View {
                 Text(size.bytes)
                     .font(Theme.digits)
                     .foregroundStyle(Theme.secondary)
+                    .contentTransition(.numericText())
             } else {
                 ProgressView().controlSize(.mini)
             }
-            Toggle("", isOn: isOn)
+            Toggle(category.name, isOn: isOn)
                 .toggleStyle(.switch)
                 .controlSize(.small)
                 .labelsHidden()
                 .tint(Theme.graphite)
                 .disabled(locked || missing)
+                .accessibilityLabel(category.name)
         }
-        .frame(height: 52)
+        .frame(height: compact ? 36 : 52)
         .opacity(locked || missing ? 0.6 : 1)
         .hoverWash()
     }
@@ -204,5 +284,10 @@ private struct HoldButton: View {
             Text("Hold to Clean").font(Theme.sectionTitle).foregroundStyle(enabled ? Theme.ink : Theme.tertiary)
         }
         .opacity(enabled || busy ? 1 : 0.45)
+        // VoiceOver can't press and hold, so it gets a direct action instead.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(busy ? "Working" : "Hold to Clean")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(named: "Clean") { if enabled { onComplete() } }
     }
 }
