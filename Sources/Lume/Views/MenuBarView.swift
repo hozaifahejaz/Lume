@@ -30,6 +30,8 @@ struct MenuBarView: View {
                 Spacer()
                 Button("Open Lume") {
                     MainWindow.openAction = openWindow
+                    // Dismiss the panel first, so the main window comes forward instead of hiding behind it.
+                    NSApp.keyWindow?.close()
                     MainWindow.open()
                 }
                 .glassButton(prominent: true)
