@@ -68,7 +68,7 @@ private struct StartupRow: View {
                 .saturation(item.isEnabled ? 1 : 0)
                 .opacity(item.isEnabled ? 1 : 0.6)
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.displayName.capitalized)
+                Text(item.displayName)
                     .font(Theme.body.weight(.medium))
                     .foregroundStyle(item.isEnabled ? Theme.ink : Theme.secondary)
                     .lineLimit(1)

@@ -284,6 +284,11 @@ extension SystemMonitor {
     }
 }
 
+extension Double {
+    /// A 0...1 fraction as a rounded percentage, the one formatter every screen uses.
+    var percent: String { "\(Int((self * 100).rounded()))%" }
+}
+
 extension Int64 {
     /// Calm, decimal sizes: "106 GB", "19.8 GB", "400 MB", "0 KB".
     var bytes: String {

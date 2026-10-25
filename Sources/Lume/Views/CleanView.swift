@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CleanView: View {
     @ObservedObject var cleaner: Cleaner
+    @EnvironmentObject private var monitor: SystemMonitor
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.gap) {
@@ -60,6 +61,9 @@ struct CleanView: View {
         .animation(.smooth(duration: 0.6), value: cleaner.phase)
         .animation(.smooth(duration: 0.6), value: cleaner.selectedTotal)
         .task { if cleaner.phase == .idle { await cleaner.scan() } }
+        .onChange(of: cleaner.phase) { _, phase in
+            if case .done = phase { monitor.refreshDisk() }
+        }
     }
 
     private var headline: String {
@@ -69,7 +73,8 @@ struct CleanView: View {
         case .done(let freed): return "Freed \(freed.bytes)."
         case .ready:
             let total = cleaner.categories.compactMap { cleaner.sizes[$0.id] }.reduce(0, +)
-            return total > 0 ? "\(total.bytes) can be cleared." : "Nothing to clear right now."
+            // In-use and protected files are skipped, so this is an upper bound.
+            return total > 0 ? "Up to \(total.bytes) can be cleared." : "Nothing to clear right now."
         }
     }
 
@@ -106,9 +111,10 @@ struct CleanView: View {
     }
 
     private func row(_ category: JunkCategory) -> some View {
+        let missing = cleaner.missing.contains(category.id)
         let locked = cleaner.unreadable.contains(category.id)
         let isOn = Binding(
-            get: { cleaner.selected.contains(category.id) && !locked },
+            get: { cleaner.selected.contains(category.id) && !locked && !missing },
             set: { on in
                 if on { cleaner.selected.insert(category.id) } else { cleaner.selected.remove(category.id) }
             }
@@ -120,7 +126,11 @@ struct CleanView: View {
                 Text(category.detail).font(Theme.caption).foregroundStyle(Theme.secondary)
             }
             Spacer()
-            if locked {
+            if missing {
+                Text("Not found")
+                    .font(Theme.caption)
+                    .foregroundStyle(Theme.tertiary)
+            } else if locked {
                 Label("Needs access", systemImage: "lock")
                     .font(Theme.caption)
                     .foregroundStyle(Theme.tertiary)
@@ -136,10 +146,10 @@ struct CleanView: View {
                 .controlSize(.small)
                 .labelsHidden()
                 .tint(Theme.graphite)
-                .disabled(locked)
+                .disabled(locked || missing)
         }
         .frame(height: 52)
-        .opacity(locked ? 0.6 : 1)
+        .opacity(locked || missing ? 0.6 : 1)
         .hoverWash()
     }
 }

@@ -4,6 +4,7 @@ import AppKit
 /// A compact glance from the menu bar: the same three quiet stats as the Overview.
 struct MenuBarView: View {
     @EnvironmentObject private var monitor: SystemMonitor
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -13,11 +14,11 @@ struct MenuBarView: View {
                 Text(monitor.mood).font(Theme.caption).foregroundStyle(Theme.secondary)
             }
             HStack(spacing: 0) {
-                stat("Processor", "\(Int((monitor.cpu * 100).rounded()))%", monitor.cpu)
+                stat("Processor", monitor.cpu.percent, monitor.cpu)
                 Hairline(vertical: true).padding(.horizontal, 12)
-                stat("Memory", "\(Int((monitor.memory.fraction * 100).rounded()))%", monitor.memory.fraction)
+                stat("Memory", monitor.memory.fraction.percent, monitor.memory.fraction)
                 Hairline(vertical: true).padding(.horizontal, 12)
-                stat("Disk", "\(Int((monitor.disk.fraction * 100).rounded()))%", monitor.disk.fraction)
+                stat("Disk", monitor.disk.fraction.percent, monitor.disk.fraction)
             }
             .fixedSize(horizontal: false, vertical: true)
             .padding(16)
@@ -27,8 +28,8 @@ struct MenuBarView: View {
                     .glassButton()
                 Spacer()
                 Button("Open Lume") {
-                    NSApp.activate(ignoringOtherApps: true)
-                    NSApp.windows.first(where: { $0.canBecomeMain })?.makeKeyAndOrderFront(nil)
+                    MainWindow.openAction = openWindow
+                    MainWindow.open()
                 }
                 .glassButton(prominent: true)
             }

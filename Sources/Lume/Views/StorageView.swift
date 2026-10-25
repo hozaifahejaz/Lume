@@ -67,12 +67,12 @@ struct StorageView: View {
         var shown: [UsageSegment] = []
         var sum: Int64 = 0
         for folder in scanner.folders where Double(folder.size) >= threshold && shown.count < 4 {
-            guard sum + folder.size <= used else { break }
             shown.append(UsageSegment(name: folder.name, size: folder.size,
                                       color: Theme.storageTones[shown.count]))
             sum += folder.size
         }
-        shown.append(UsageSegment(name: "System & other", size: used - sum, color: Theme.storageOther))
+        // Never negative: if the folders somehow add up to more than "used", the bar scales to their sum.
+        shown.append(UsageSegment(name: "System & other", size: max(0, used - sum), color: Theme.storageOther))
         return shown
     }
 
@@ -115,7 +115,8 @@ private struct UsageBar: View {
     var body: some View {
         GeometryReader { geo in
             let width = geo.size.width
-            let usedWidth = width * CGFloat(Double(used) / Double(max(total, 1)))
+            let filled = max(used, segments?.reduce(0) { $0 + $1.size } ?? used)
+            let usedWidth = width * CGFloat(min(1, Double(filled) / Double(max(total, 1))))
             ZStack(alignment: .leading) {
                 Rectangle().fill(Theme.track)
                 if let segments {
@@ -124,7 +125,7 @@ private struct UsageBar: View {
                         ForEach(segments) { segment in
                             Rectangle()
                                 .fill(segment.color)
-                                .frame(width: max(1, (usedWidth - gaps) * CGFloat(Double(segment.size) / Double(max(used, 1)))))
+                                .frame(width: max(1, max(0, usedWidth - gaps) * CGFloat(Double(segment.size) / Double(max(filled, 1)))))
                         }
                     }
                 } else {

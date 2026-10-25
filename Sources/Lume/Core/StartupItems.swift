@@ -8,12 +8,15 @@ struct StartupItem: Identifiable, Hashable {
     let program: String
     let isUserScope: Bool
     var isEnabled: Bool
+    /// The name of the app the helper belongs to, when its program lives inside one.
+    var appName: String? = nil
 
     var displayName: String {
-        // "com.vendor.product.agent" reads better as "product agent".
+        if let appName { return appName }
+        // "com.vendor.product.agent" reads better as "Product Agent".
         let parts = label.split(separator: ".")
         let meaningful = parts.count > 2 ? parts.dropFirst(2) : parts[...]
-        return meaningful.joined(separator: " ")
+        return meaningful.map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
     }
 }
 
@@ -39,17 +42,40 @@ final class StartupItems: ObservableObject {
 
     func setEnabled(_ item: StartupItem, _ enabled: Bool) {
         guard item.isUserScope, item.isEnabled != enabled else { return }
-        let destinationFolder = enabled ? userAgents : userDisabled
-        try? fm.createDirectory(at: destinationFolder, withIntermediateDirectories: true)
-        let destination = destinationFolder.appending(path: item.url.lastPathComponent)
-        if !enabled { launchctl(["bootout", "gui/\(getuid())", item.url.path]) }
-        do {
-            try fm.moveItem(at: item.url, to: destination)
-            if enabled { launchctl(["bootstrap", "gui/\(getuid())", destination.path]) }
-        } catch {
-            NSSound.beep()
+        let source = item.url
+        let destination = (enabled ? userAgents : userDisabled).appending(path: source.lastPathComponent)
+        Task {
+            let moved = await Task.detached { Self.move(source, to: destination, enabling: enabled) }.value
+            if !moved { NSSound.beep() }
+            reload()
         }
-        reload()
+    }
+
+    /// Moves a plist between the live and paused folders, keeping launchd in step. Runs off the main actor.
+    nonisolated private static func move(_ source: URL, to destination: URL, enabling: Bool) -> Bool {
+        let fm = FileManager.default
+        let domain = "gui/\(getuid())"
+        try? fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if !enabling { launchctl(["bootout", domain, source.path]) }
+        do {
+            if fm.fileExists(atPath: destination.path) {
+                if enabling {
+                    // The app reinstalled its agent meanwhile: keep that one and drop our paused copy.
+                    try fm.removeItem(at: source)
+                    launchctl(["bootstrap", domain, destination.path])
+                    return true
+                }
+                // An older paused copy is in the way; the live one replaces it.
+                try fm.removeItem(at: destination)
+            }
+            try fm.moveItem(at: source, to: destination)
+            if enabling { launchctl(["bootstrap", domain, destination.path]) }
+            return true
+        } catch {
+            // Pausing failed after bootout: load the agent again so nothing is left half-off.
+            if !enabling { launchctl(["bootstrap", domain, source.path]) }
+            return false
+        }
     }
 
     func reveal(_ item: StartupItem) {
@@ -70,11 +96,23 @@ final class StartupItems: ObservableObject {
             let program = (dict["Program"] as? String)
                 ?? (dict["ProgramArguments"] as? [String])?.first
                 ?? ""
-            return StartupItem(url: url, label: label, program: program, isUserScope: user, isEnabled: enabled)
+            return StartupItem(url: url, label: label, program: program, isUserScope: user, isEnabled: enabled,
+                               appName: Self.appName(for: program))
         }
     }
 
-    private func launchctl(_ args: [String]) {
+    /// CFBundleDisplayName or CFBundleName of the outermost .app containing `program`.
+    private static func appName(for program: String) -> String? {
+        let parts = program.split(separator: "/", omittingEmptySubsequences: false)
+        guard let index = parts.firstIndex(where: { $0.hasSuffix(".app") }),
+              let bundle = Bundle(path: parts[...index].joined(separator: "/")) else { return nil }
+        let info = bundle.localizedInfoDictionary ?? [:]
+        let plain = bundle.infoDictionary ?? [:]
+        return (info["CFBundleDisplayName"] ?? plain["CFBundleDisplayName"]
+            ?? info["CFBundleName"] ?? plain["CFBundleName"]) as? String
+    }
+
+    nonisolated private static func launchctl(_ args: [String]) {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/bin/launchctl")
         task.arguments = args

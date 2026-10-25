@@ -1,7 +1,7 @@
 import Foundation
 import Darwin
 
-/// Samples CPU, memory and disk once a second using Mach and Foundation APIs.
+/// Samples CPU and memory once a second using Mach APIs; disk space every 30 seconds, off the main actor.
 @MainActor
 final class SystemMonitor: ObservableObject {
     @Published private(set) var cpu: Double = 0
@@ -10,12 +10,29 @@ final class SystemMonitor: ObservableObject {
     @Published private(set) var disk = DiskStats()
 
     private var timer: Timer?
+    private var diskTimer: Timer?
     private var previousTicks: [CPUTicks] = []
 
     init() {
         sample()
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        refreshDisk()
+        // .common keeps both ticking while a menu is open.
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.sample() }
+        }
+        let diskTimer = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refreshDisk() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        RunLoop.main.add(diskTimer, forMode: .common)
+        self.timer = timer
+        self.diskTimer = diskTimer
+    }
+
+    /// Re-reads free space in the background; the volume query can be slow.
+    func refreshDisk() {
+        Task {
+            disk = await Task.detached { Self.readDisk() }.value
         }
     }
 
@@ -35,7 +52,6 @@ final class SystemMonitor: ObservableObject {
         }
         previousTicks = ticks
         memory = Self.readMemory()
-        disk = Self.readDisk()
     }
 
     // MARK: CPU
@@ -107,7 +123,7 @@ final class SystemMonitor: ObservableObject {
         var fraction: Double { total > 0 ? Double(used) / Double(total) : 0 }
     }
 
-    private static func readDisk() -> DiskStats {
+    nonisolated private static func readDisk() -> DiskStats {
         let url = URL(fileURLWithPath: "/")
         let keys: Set<URLResourceKey> = [.volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey]
         guard let values = try? url.resourceValues(forKeys: keys) else { return DiskStats() }

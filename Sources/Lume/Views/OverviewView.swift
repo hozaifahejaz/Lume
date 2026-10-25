@@ -17,7 +17,7 @@ struct OverviewView: View {
             GlassPanel(fill: false) {
                 VStack(alignment: .leading, spacing: 20) {
                     HStack(spacing: 0) {
-                        stat("Processor", percent(monitor.cpu),
+                        stat("Processor", monitor.cpu.percent,
                              "\(ProcessInfo.processInfo.activeProcessorCount) cores", monitor.cpu)
                         Hairline(vertical: true).padding(.horizontal, 20)
                         stat("Memory", monitor.memory.used.bytes, "of \(monitor.memory.total.bytes)",
@@ -34,7 +34,7 @@ struct OverviewView: View {
                         HStack {
                             Text("Processor, last minute").font(Theme.caption).foregroundStyle(Theme.secondary)
                             Spacer()
-                            Text(percent(monitor.cpu)).font(Theme.digits).foregroundStyle(Theme.secondary)
+                            Text(monitor.cpu.percent).font(Theme.digits).foregroundStyle(Theme.secondary)
                         }
                         Sparkline(values: monitor.cpuHistory)
                             .frame(height: 32)
@@ -82,8 +82,6 @@ struct OverviewView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func percent(_ value: Double) -> String { "\(Int((value * 100).rounded()))%" }
-
     private var resources: [(name: String, value: Double)] {
         [("Processor", monitor.cpu), ("Memory", monitor.memory.fraction), ("Disk", monitor.disk.fraction)]
     }
@@ -100,7 +98,7 @@ struct OverviewView: View {
         let busy = resources.filter { $0.value >= 0.7 }.sorted { $0.value > $1.value }
         guard !busy.isEmpty else { return "Processor, memory and disk all have plenty of headroom." }
         let parts = busy.enumerated().map { index, resource in
-            "\(index == 0 ? resource.name : resource.name.lowercased()) at \(percent(resource.value))"
+            "\(index == 0 ? resource.name : resource.name.lowercased()) at \(resource.value.percent)"
         }
         let rest = busy.count < resources.count ? " Everything else is fine." : ""
         return parts.joined(separator: " and ") + "." + rest
@@ -125,6 +123,7 @@ private struct ProcessRow: View {
             Text(value)
                 .font(Theme.digits)
                 .foregroundStyle(Theme.secondary)
+            // Only regular apps can be quit; system and background processes never show the button.
             Button(action: onQuit) {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 13))
@@ -132,7 +131,8 @@ private struct ProcessRow: View {
             }
             .buttonStyle(.plain)
             .help("Quit \(process.name)")
-            .opacity(hovering.value ? 1 : 0)
+            .opacity(process.canQuit && hovering.value ? 1 : 0)
+            .disabled(!process.canQuit)
         }
         .frame(maxHeight: .infinity)
         .onHover { hovering.value = $0 }

@@ -46,37 +46,50 @@ final class Cleaner: ObservableObject {
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var sizes: [String: Int64] = [:]
     @Published private(set) var unreadable: Set<String> = []
+    /// Folders that don't exist on this Mac, such as DerivedData without Xcode.
+    @Published private(set) var missing: Set<String> = []
     @Published var selected: Set<String> = ["caches", "logs", "xcode"]
 
     let categories = JunkCategory.all
 
     var selectedTotal: Int64 {
-        selected.reduce(0) { $0 + (sizes[$1] ?? 0) }
+        selected.subtracting(missing).subtracting(unreadable).reduce(0) { $0 + (sizes[$1] ?? 0) }
     }
 
     func scan() async {
         phase = .scanning
         sizes = [:]
         unreadable = []
-        await withTaskGroup(of: (String, Int64?).self) { group in
+        missing = []
+        enum Result { case size(Int64), missing, unreadable }
+        await withTaskGroup(of: (String, Result).self) { group in
             for category in categories {
                 group.addTask {
                     let url = category.url
-                    guard (try? FileManager.default.contentsOfDirectory(atPath: url.path)) != nil else {
-                        return (category.id, nil)
+                    var isDirectory: ObjCBool = false
+                    guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+                          isDirectory.boolValue else {
+                        return (category.id, .missing)
                     }
-                    return (category.id, DiskSize.of(url))
+                    guard (try? FileManager.default.contentsOfDirectory(atPath: url.path)) != nil else {
+                        return (category.id, .unreadable)
+                    }
+                    return (category.id, .size(DiskSize.of(url)))
                 }
             }
-            for await (id, size) in group {
-                if let size { sizes[id] = size } else { unreadable.insert(id); sizes[id] = 0 }
+            for await (id, result) in group {
+                switch result {
+                case .size(let size): sizes[id] = size
+                case .missing: missing.insert(id); sizes[id] = 0
+                case .unreadable: unreadable.insert(id); sizes[id] = 0
+                }
             }
         }
         phase = .ready
     }
 
     func clean() async {
-        let targets = categories.filter { selected.contains($0.id) && !unreadable.contains($0.id) }
+        let targets = categories.filter { selected.contains($0.id) && !unreadable.contains($0.id) && !missing.contains($0.id) }
         let before = selectedTotal
         phase = .cleaning
         await Task.detached(priority: .userInitiated) {
