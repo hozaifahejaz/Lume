@@ -39,7 +39,20 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-# Ad-hoc signature so Gatekeeper lets it run locally.
-codesign --force --deep --sign - "$APP"
+# Sign with the local "Lume Local" identity when there is one: its signature stays the same across
+# builds, so privacy permissions such as Full Disk Access survive a rebuild. It lives in its own
+# keychain, whose password is only a lock for this one self-signed certificate, so signing never
+# prompts. Otherwise fall back to an ad-hoc signature, which macOS treats as a new app every build.
+SIGNING_KEYCHAIN="$HOME/Library/Keychains/lume-signing.keychain-db"
+SIGNING_PASSWORD="lume-local-signing"
+if [ -f "$SIGNING_KEYCHAIN" ] && security unlock-keychain -p "$SIGNING_PASSWORD" "$SIGNING_KEYCHAIN" 2>/dev/null \
+    && security find-identity -p codesigning "$SIGNING_KEYCHAIN" | grep -q "Lume Local"; then
+    codesign --force --deep --sign "Lume Local" --keychain "$SIGNING_KEYCHAIN" "$APP"
+elif security find-identity -v -p codesigning | grep -q "Lume Local"; then
+    codesign --force --deep --sign "Lume Local" "$APP"
+else
+    codesign --force --deep --sign - "$APP"
+    echo "Signed ad-hoc. Create a \"Lume Local\" code-signing identity to keep permissions across builds."
+fi
 
 echo "Built $APP"
