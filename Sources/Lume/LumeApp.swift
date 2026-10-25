@@ -10,9 +10,10 @@ struct LumeApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(monitor)
-                .frame(minWidth: 820, minHeight: 560)
+                .frame(minWidth: 860, minHeight: 600)
         }
         .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 980, height: 680)
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .newItem) {}
@@ -22,7 +23,7 @@ struct LumeApp: App {
             MenuBarView()
                 .environmentObject(monitor)
         } label: {
-            Image(systemName: "circle.hexagongrid")
+            Image(systemName: "sun.min")
         }
         .menuBarExtraStyle(.window)
     }

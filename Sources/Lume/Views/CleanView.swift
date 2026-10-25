@@ -2,55 +2,60 @@ import SwiftUI
 
 struct CleanView: View {
     @ObservedObject var cleaner: Cleaner
-    @StateObject private var confirmState = ViewState(false)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            PageHeader(title: "Clean", subtitle: "Remove files your Mac and apps can safely rebuild.")
+        VStack(spacing: 0) {
+            Text(eyebrow).monoLabel(Theme.amber.opacity(0.85))
 
-            Card {
-                HStack(alignment: .center) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(headline).font(Theme.label).foregroundStyle(.secondary)
-                        Text(bigNumber)
-                            .font(Theme.number(46))
-                            .contentTransition(.numericText())
-                    }
-                    Spacer()
-                    actionButton
-                }
-                .animation(.smooth, value: cleaner.phase)
-            }
+            Text(bigNumber)
+                .font(Theme.serif(96).monospacedDigit())
+                .foregroundStyle(Theme.bone)
+                .shadow(color: Theme.amber.opacity(0.22), radius: 34)
+                .contentTransition(.numericText(countsDown: true))
+                .padding(.top, 18)
 
-            Card {
-                VStack(spacing: 0) {
-                    ForEach(Array(cleaner.categories.enumerated()), id: \.element.id) { index, category in
-                        if index > 0 { Divider().padding(.leading, 48) }
-                        row(category)
-                    }
+            Text(caption)
+                .font(Theme.body)
+                .foregroundStyle(Theme.boneDim)
+                .padding(.top, 8)
+
+            action.padding(.top, 44)
+
+            VStack(spacing: 0) {
+                Hairline()
+                ForEach(cleaner.categories) { category in
+                    row(category)
+                    Hairline()
                 }
             }
+            .padding(.top, 64)
 
             if !cleaner.unreadable.isEmpty {
-                Text("Some folders need Full Disk Access. Grant it in System Settings › Privacy & Security.")
-                    .font(Theme.label)
-                    .foregroundStyle(.secondary)
+                Text("Some folders need Full Disk Access · System Settings › Privacy & Security")
+                    .monoLabel(size: 9.5)
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 20)
             }
         }
+        .frame(maxWidth: .infinity)
+        .animation(.smooth(duration: 0.6), value: cleaner.phase)
+        .animation(.smooth(duration: 0.6), value: cleaner.selectedTotal)
         .task { if cleaner.phase == .idle { await cleaner.scan() } }
-        .confirmationDialog("Remove \(cleaner.selectedTotal.bytes) of files?", isPresented: $confirmState.value) {
-            Button("Clean", role: .destructive) { Task { await cleaner.clean() } }
-        } message: {
-            Text("Caches and logs are recreated automatically. Emptied Trash cannot be recovered.")
+    }
+
+    private var eyebrow: String {
+        switch cleaner.phase {
+        case .idle, .scanning: return "Measuring"
+        case .cleaning: return "Releasing"
+        case .done: return "Released"
+        case .ready: return "Reclaimable"
         }
     }
 
-    private var headline: String {
+    private var caption: String {
         switch cleaner.phase {
-        case .idle, .scanning: return "Scanning…"
-        case .cleaning: return "Cleaning…"
-        case .done: return "Freed"
-        case .ready: return "Ready to clean"
+        case .done: return "Your Mac rebuilds what it needs, when it needs it."
+        default: return "Files your Mac and apps can safely rebuild."
         }
     }
 
@@ -59,50 +64,108 @@ struct CleanView: View {
         return cleaner.selectedTotal.bytes
     }
 
-    @ViewBuilder private var actionButton: some View {
+    @ViewBuilder private var action: some View {
         switch cleaner.phase {
-        case .idle, .scanning, .cleaning:
-            ProgressView().controlSize(.small)
-        case .ready:
-            Button("Clean") { confirmState.value = true }
-                .buttonStyle(PillButtonStyle())
-                .disabled(cleaner.selectedTotal == 0)
         case .done:
-            Button("Scan again") { Task { await cleaner.scan() } }
-                .buttonStyle(PillButtonStyle(prominent: false))
+            Button("Measure again") { Task { await cleaner.scan() } }
+                .buttonStyle(MonoButtonStyle())
+                .frame(height: 132)
+        default:
+            HoldButton(
+                enabled: cleaner.phase == .ready && cleaner.selectedTotal > 0,
+                busy: cleaner.phase != .ready
+            ) {
+                Task { await cleaner.clean() }
+            }
         }
     }
 
     private func row(_ category: JunkCategory) -> some View {
         let locked = cleaner.unreadable.contains(category.id)
-        let isOn = Binding(
-            get: { cleaner.selected.contains(category.id) && !locked },
-            set: { on in
-                if on { cleaner.selected.insert(category.id) } else { cleaner.selected.remove(category.id) }
-            }
-        )
-        return HStack(spacing: 14) {
-            IconBadge(symbol: category.symbol)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(category.name).font(.system(size: 13, weight: .medium))
-                Text(category.detail).font(Theme.label).foregroundStyle(.secondary)
+        let isOn = cleaner.selected.contains(category.id) && !locked
+        let toggle = {
+            guard !locked else { return }
+            if isOn { cleaner.selected.remove(category.id) } else { cleaner.selected.insert(category.id) }
+        }
+        return HStack(spacing: 16) {
+            GlowToggle(isOn: isOn, disabled: locked, action: toggle)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(category.name)
+                    .font(Theme.serif(19, .regular))
+                    .foregroundStyle(Theme.bone.opacity(isOn ? 1 : 0.7))
+                Text(category.detail)
+                    .font(Theme.body)
+                    .foregroundStyle(Theme.boneDim)
             }
             Spacer()
             if locked {
-                Image(systemName: "lock").foregroundStyle(.tertiary)
+                Text("Needs access").monoLabel(size: 9.5)
             } else if let size = cleaner.sizes[category.id] {
                 Text(size.bytes)
-                    .font(.system(size: 13, design: .rounded).monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .font(Theme.mono(12))
+                    .foregroundStyle(isOn ? Theme.bone : Theme.boneDim)
             } else {
                 ProgressView().controlSize(.mini)
             }
-            Toggle("", isOn: isOn)
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .labelsHidden()
-                .disabled(locked)
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 14)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: toggle)
+    }
+}
+
+/// Press and hold for 1.2s to fill the ring and fire; releasing early cancels.
+private struct HoldButton: View {
+    let enabled: Bool
+    let busy: Bool
+    let onComplete: () -> Void
+    @StateObject private var progress = ViewState<Double>(0)
+    private let duration = 1.2
+
+    var body: some View {
+        VStack(spacing: 18) {
+            ZStack {
+                Circle().stroke(Theme.hairline, lineWidth: 1.5)
+                Circle()
+                    .trim(from: 0, to: progress.value)
+                    .stroke(Theme.amber, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .shadow(color: Theme.amber.opacity(0.9), radius: 10)
+                    .opacity(progress.value > 0 ? 1 : 0)
+                Circle()
+                    .fill(RadialGradient(
+                        colors: [Theme.amber.opacity(0.3 + 0.45 * progress.value), Theme.amber.opacity(0.04)],
+                        center: .center, startRadius: 0, endRadius: 44
+                    ))
+                    .padding(12)
+                    .shadow(color: Theme.amber.opacity(0.25 + 0.5 * progress.value), radius: 28)
+                if busy {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "sparkle")
+                        .font(.system(size: 22, weight: .ultraLight))
+                        .foregroundStyle(Theme.bone)
+                }
+            }
+            .frame(width: 96, height: 96)
+            .scaleEffect(progress.value > 0 ? 0.95 : 1)
+            .contentShape(Circle())
+            .onLongPressGesture(minimumDuration: duration, maximumDistance: 40) {
+                guard enabled else { return }
+                onComplete()
+                withAnimation(.smooth(duration: 0.5)) { progress.value = 0 }
+            } onPressingChanged: { pressing in
+                guard enabled else { return }
+                if pressing {
+                    withAnimation(.linear(duration: duration)) { progress.value = 1 }
+                } else {
+                    withAnimation(.smooth(duration: 0.35)) { progress.value = 0 }
+                }
+            }
+            .allowsHitTesting(enabled)
+
+            Text("Hold to release").monoLabel(Theme.bone.opacity(enabled ? 0.75 : 0.3))
+        }
+        .opacity(enabled || busy ? 1 : 0.45)
     }
 }

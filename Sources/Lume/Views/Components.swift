@@ -1,104 +1,109 @@
 import SwiftUI
 
-/// A thin progress ring with a large light numeral in the middle.
-struct Ring: View {
-    let fraction: Double
-    let label: String
-    let caption: String
-    var size: CGFloat = 132
+/// A luminous sphere that breathes slowly; its glow follows `load`.
+struct Orb: View {
+    let load: Double
+    var size: CGFloat = 220
 
     var body: some View {
-        VStack(spacing: 14) {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: false)) { timeline in
+            let t = timeline.date.timeIntervalSinceReferenceDate
+            let breath = sin(t * .pi * 2 / 4)
+            let tint = Theme.tint(for: load)
+            let glow = 0.35 + 0.65 * min(max(load, 0), 1)
+
             ZStack {
                 Circle()
-                    .stroke(.primary.opacity(0.06), lineWidth: 8)
+                    .fill(RadialGradient(
+                        colors: [tint.opacity(0.28 * glow), tint.opacity(0.06 * glow), .clear],
+                        center: .center, startRadius: size * 0.35, endRadius: size
+                    ))
+                    .frame(width: size * 2, height: size * 2)
                 Circle()
-                    .trim(from: 0, to: max(0.002, min(fraction, 1)))
-                    .stroke(Theme.tint(for: fraction).gradient, style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                    .animation(.smooth(duration: 0.6), value: fraction)
-                HStack(alignment: .firstTextBaseline, spacing: 1) {
-                    Text("\(Int((fraction * 100).rounded()))")
-                        .font(Theme.number(size * 0.3))
-                        .contentTransition(.numericText())
-                        .animation(.smooth, value: Int(fraction * 100))
-                    Text("%")
-                        .font(.system(size: size * 0.11, weight: .regular, design: .rounded))
-                        .foregroundStyle(.secondary)
-                }
+                    .fill(RadialGradient(
+                        colors: [Theme.bone.opacity(0.95), tint, tint.opacity(0.55), tint.opacity(0.15)],
+                        center: UnitPoint(x: 0.4, y: 0.34), startRadius: 0, endRadius: size * 0.66
+                    ))
+                    .frame(width: size, height: size)
+                    .shadow(color: tint.opacity(0.6 * glow), radius: size * 0.18)
+                    .shadow(color: tint.opacity(0.35 * glow), radius: size * 0.09)
             }
-            .frame(width: size, height: size)
-
-            VStack(spacing: 3) {
-                Text(label).font(.system(size: 13, weight: .semibold))
-                Text(caption).font(Theme.label).foregroundStyle(.secondary)
-            }
+            .scaleEffect(1 + 0.03 * breath)
         }
-        .frame(maxWidth: .infinity)
+        .frame(width: size, height: size)
+        .allowsHitTesting(false)
     }
 }
 
-/// A soft area chart for a short rolling history of values in 0...1.
-struct Sparkline: View {
+/// Thin concentric arcs, inner to outer, each filling clockwise from the top.
+struct LoadArcs: View {
     let values: [Double]
-    var tint: Color = Theme.accent
+    let diameter: CGFloat
+    var spacing: CGFloat = 26
+
+    var body: some View {
+        ZStack {
+            ForEach(values.indices, id: \.self) { index in
+                let value = min(max(values[index], 0), 1)
+                let tint = Theme.tint(for: value)
+                ZStack {
+                    Circle().stroke(Theme.hairline, lineWidth: 1.5)
+                    Circle()
+                        .trim(from: 0, to: max(0.004, value))
+                        .stroke(tint, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                        .shadow(color: tint.opacity(0.8), radius: 6)
+                        .rotationEffect(.degrees(-90))
+                        .animation(.smooth(duration: 0.8), value: value)
+                }
+                .frame(
+                    width: diameter + CGFloat(index) * spacing * 2,
+                    height: diameter + CGFloat(index) * spacing * 2
+                )
+            }
+        }
+    }
+}
+
+/// A thin glowing line for a rolling history of values in 0...1.
+struct GlowLine: View {
+    let values: [Double]
+    var tint: Color = Theme.amber
 
     var body: some View {
         GeometryReader { geo in
-            let points = values.enumerated().map { index, value in
-                CGPoint(
-                    x: geo.size.width * CGFloat(index) / CGFloat(max(values.count - 1, 1)),
-                    y: geo.size.height * (1 - CGFloat(min(max(value, 0), 1)))
-                )
+            let path = Path { path in
+                for (index, value) in values.enumerated() {
+                    let point = CGPoint(
+                        x: geo.size.width * CGFloat(index) / CGFloat(max(values.count - 1, 1)),
+                        y: geo.size.height * (1 - CGFloat(min(max(value, 0), 1)))
+                    )
+                    if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
+                }
             }
             ZStack {
-                Path { path in
-                    guard let first = points.first else { return }
-                    path.move(to: CGPoint(x: first.x, y: geo.size.height))
-                    points.forEach { path.addLine(to: $0) }
-                    path.addLine(to: CGPoint(x: points.last?.x ?? 0, y: geo.size.height))
-                    path.closeSubpath()
-                }
-                .fill(LinearGradient(colors: [tint.opacity(0.25), tint.opacity(0)], startPoint: .top, endPoint: .bottom))
-
-                Path { path in
-                    guard let first = points.first else { return }
-                    path.move(to: first)
-                    points.dropFirst().forEach { path.addLine(to: $0) }
-                }
-                .stroke(tint, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                path.stroke(tint.opacity(0.4), style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+                    .blur(radius: 6)
+                path.stroke(tint, style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
             }
         }
     }
 }
 
-/// A horizontal proportion bar used in lists.
-struct UsageBar: View {
+/// A one-point proportion line with a soft glow on the filled part.
+struct HairlineBar: View {
     let fraction: Double
-    var tint: Color = Theme.accent
+    var tint: Color = Theme.amber
 
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                Capsule().fill(.primary.opacity(0.06))
-                Capsule().fill(tint.gradient)
-                    .frame(width: max(4, geo.size.width * min(max(fraction, 0), 1)))
+                Rectangle().fill(Theme.hairline)
+                Rectangle().fill(tint)
+                    .frame(width: max(1, geo.size.width * min(max(fraction, 0), 1)))
+                    .shadow(color: tint.opacity(0.7), radius: 4)
             }
         }
-        .frame(height: 6)
+        .frame(height: 1)
         .animation(.smooth, value: fraction)
-    }
-}
-
-struct IconBadge: View {
-    let symbol: String
-    var tint: Color = Theme.accent
-
-    var body: some View {
-        Image(systemName: symbol)
-            .font(.system(size: 14, weight: .medium))
-            .foregroundStyle(tint)
-            .frame(width: 34, height: 34)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(tint.opacity(0.12)))
     }
 }

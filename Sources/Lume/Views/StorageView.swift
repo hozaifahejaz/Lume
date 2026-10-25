@@ -5,93 +5,121 @@ struct StorageView: View {
     @EnvironmentObject private var monitor: SystemMonitor
     @ObservedObject var scanner: StorageScanner
 
+    private let segmentCount = 8
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            PageHeader(title: "Storage", subtitle: "Where your space is going.") {
-                Button { Task { await scanner.scan() } } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .buttonStyle(PillButtonStyle(prominent: false))
-                .disabled(scanner.isScanning)
+        VStack(alignment: .leading, spacing: 0) {
+            PageHeader(eyebrow: "Storage", title: "Where your space lives.") {
+                Button("Measure again") { Task { await scanner.scan() } }
+                    .buttonStyle(MonoButtonStyle())
+                    .disabled(scanner.isScanning)
+                    .opacity(scanner.isScanning ? 0.4 : 1)
             }
 
-            Card {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(monitor.disk.used.bytes).font(Theme.number(40))
-                        Text("used of \(monitor.disk.total.bytes)")
-                            .font(Theme.subtitle).foregroundStyle(.secondary)
-                        Spacer()
-                        Text("\(monitor.disk.available.bytes) available")
-                            .font(Theme.label).foregroundStyle(.secondary)
-                    }
-                    UsageBar(fraction: monitor.disk.fraction, tint: Theme.tint(for: monitor.disk.fraction))
-                }
+            HStack(alignment: .firstTextBaseline, spacing: 56) {
+                figure(monitor.disk.used.bytes, "Used of \(monitor.disk.total.bytes)",
+                       tint: monitor.disk.fraction > 0.85 ? Theme.coral : Theme.bone)
+                figure(monitor.disk.available.bytes, "Available", tint: Theme.bone)
+                Spacer()
+            }
+            .padding(.top, 48)
+
+            segmentBar.padding(.top, 36)
+
+            HStack {
+                Text(scanner.isScanning ? "Measuring · \(Int(scanner.progress * 100))%" : "Largest folders")
+                    .monoLabel()
+                Spacer()
+                Text("Home and Applications").monoLabel(Theme.bone.opacity(0.3), size: 9)
+            }
+            .padding(.top, 56)
+            .padding(.bottom, 14)
+            Hairline()
+
+            if scanner.folders.isEmpty && !scanner.isScanning {
+                Text("Nothing measured yet.")
+                    .font(Theme.serif(17).italic())
+                    .foregroundStyle(Theme.boneDim)
+                    .padding(.vertical, 18)
             }
 
-            Card {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack {
-                        Text("Largest folders").font(.system(size: 15, weight: .semibold))
-                        Spacer()
-                        if scanner.isScanning {
-                            ProgressView(value: scanner.progress)
-                                .progressViewStyle(.linear)
-                                .frame(width: 120)
-                        }
-                    }
-                    .padding(.bottom, 10)
-
-                    if scanner.folders.isEmpty && !scanner.isScanning {
-                        Text("Nothing measured yet.").font(Theme.subtitle).foregroundStyle(.secondary)
-                    }
-
-                    let largest = scanner.folders.first?.size ?? 1
-                    ForEach(scanner.folders) { folder in
-                        FolderRow(folder: folder, fraction: Double(folder.size) / Double(max(largest, 1)))
-                    }
-                }
+            ForEach(Array(scanner.folders.enumerated()), id: \.element.id) { index, folder in
+                FolderRow(folder: folder, opacity: segmentOpacity(index))
+                Hairline()
             }
         }
+        .animation(.smooth(duration: 0.5), value: scanner.folders)
         .task { if scanner.folders.isEmpty && !scanner.isScanning { await scanner.scan() } }
+    }
+
+    private func figure(_ value: String, _ label: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(value)
+                .font(Theme.serif(56).monospacedDigit())
+                .foregroundStyle(tint)
+                .contentTransition(.numericText())
+            Text(label).monoLabel()
+        }
+    }
+
+    /// The largest folders as amber segments of the whole disk, fading with rank.
+    private var segmentBar: some View {
+        GeometryReader { geo in
+            let total = Double(max(monitor.disk.total, 1))
+            let shown = Array(scanner.folders.prefix(segmentCount))
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.white.opacity(0.06))
+                HStack(spacing: 2) {
+                    ForEach(Array(shown.enumerated()), id: \.element.id) { index, folder in
+                        Rectangle()
+                            .fill(Theme.amber.opacity(segmentOpacity(index)))
+                            .frame(width: max(2, geo.size.width * Double(folder.size) / total))
+                    }
+                }
+                .clipShape(Capsule())
+                .shadow(color: Theme.amber.opacity(0.35), radius: 10)
+            }
+        }
+        .frame(height: 8)
+    }
+
+    private func segmentOpacity(_ index: Int) -> Double {
+        guard index < segmentCount else { return 0.12 }
+        return 1 - Double(index) * 0.75 / Double(segmentCount - 1)
     }
 }
 
 private struct FolderRow: View {
     let folder: FolderUsage
-    let fraction: Double
+    let opacity: Double
     @StateObject private var hoverState = ViewState(false)
-    private var hovering: Bool {
-        get { hoverState.value }
-        nonmutating set { hoverState.value = newValue }
-    }
 
     var body: some View {
-        HStack(spacing: 14) {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: folder.url.path))
-                .resizable()
-                .frame(width: 22, height: 22)
+        HStack(spacing: 16) {
+            Circle()
+                .fill(Theme.amber.opacity(opacity))
+                .frame(width: 7, height: 7)
+                .shadow(color: Theme.amber.opacity(opacity * 0.6), radius: 4)
             Text(folder.name)
-                .font(.system(size: 13))
-                .frame(width: 160, alignment: .leading)
+                .font(Theme.serif(17, .regular))
+                .foregroundStyle(Theme.bone)
                 .lineLimit(1)
-            UsageBar(fraction: fraction)
-            Text(folder.size.bytes)
-                .font(.system(size: 12, design: .rounded).monospacedDigit())
-                .foregroundStyle(.secondary)
-                .frame(width: 80, alignment: .trailing)
+            Spacer()
             Button {
                 NSWorkspace.shared.activateFileViewerSelecting([folder.url])
             } label: {
-                Image(systemName: "arrow.up.forward.circle.fill").foregroundStyle(.secondary)
+                Text("Reveal ↗").monoLabel(Theme.amber, size: 9.5)
             }
             .buttonStyle(.plain)
-            .help("Show in Finder")
-            .opacity(hovering ? 1 : 0)
+            .opacity(hoverState.value ? 1 : 0)
+            Text(folder.size.bytes)
+                .font(Theme.mono(12))
+                .foregroundStyle(Theme.boneDim)
+                .frame(width: 90, alignment: .trailing)
         }
-        .padding(.vertical, 7)
-        .padding(.horizontal, 8)
-        .background(RoundedRectangle(cornerRadius: 8).fill(.primary.opacity(hovering ? 0.04 : 0)))
-        .onHover { hovering = $0 }
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .onHover { hoverState.value = $0 }
+        .animation(.smooth(duration: 0.2), value: hoverState.value)
     }
 }

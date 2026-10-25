@@ -4,68 +4,95 @@ struct StartupView: View {
     @ObservedObject var items: StartupItems
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            PageHeader(title: "Startup", subtitle: "Background helpers that launch when you log in.") {
-                Button("Login Items…") { items.openLoginItemsSettings() }
-                    .buttonStyle(PillButtonStyle(prominent: false))
+        let user = items.items.filter(\.isUserScope)
+        let system = items.items.filter { !$0.isUserScope }
+
+        VStack(alignment: .leading, spacing: 0) {
+            PageHeader(eyebrow: "Startup", title: "What wakes with your Mac.") {
+                Button("Login Items ↗") { items.openLoginItemsSettings() }
+                    .buttonStyle(MonoButtonStyle())
             }
+            Text("Pausing one of yours moves its file aside. Turn it back on any time.")
+                .font(Theme.body)
+                .foregroundStyle(Theme.boneDim)
+                .padding(.top, 14)
 
-            let user = items.items.filter(\.isUserScope)
-            let system = items.items.filter { !$0.isUserScope }
-
-            group(title: "Yours", subtitle: "Pausing moves the file aside. Turn it back on any time.", rows: user)
+            group("Yours", rows: user)
             if !system.isEmpty {
-                group(title: "System-wide", subtitle: "Installed for all users. Managed in System Settings.", rows: system)
+                group("System-wide", rows: system)
             }
         }
+        .animation(.smooth(duration: 0.4), value: items.items)
         .onAppear { items.reload() }
     }
 
     @ViewBuilder
-    private func group(title: String, subtitle: String, rows: [StartupItem]) -> some View {
-        Card {
-            VStack(alignment: .leading, spacing: 0) {
-                Text(title).font(.system(size: 15, weight: .semibold))
-                Text(subtitle).font(Theme.label).foregroundStyle(.secondary).padding(.bottom, 10)
+    private func group(_ title: String, rows: [StartupItem]) -> some View {
+        HStack {
+            Text(title).monoLabel()
+            Spacer()
+            Text("\(rows.count)").monoLabel(Theme.bone.opacity(0.3))
+        }
+        .padding(.top, 52)
+        .padding(.bottom, 12)
+        Hairline()
 
-                if rows.isEmpty {
-                    Text("Nothing here. Nice and quiet.")
-                        .font(Theme.subtitle).foregroundStyle(.secondary).padding(.vertical, 8)
-                }
-                ForEach(Array(rows.enumerated()), id: \.element.id) { index, item in
-                    if index > 0 { Divider().padding(.leading, 48) }
-                    row(item)
-                }
-            }
+        if rows.isEmpty {
+            Text("Nothing here. Nice and quiet.")
+                .font(Theme.serif(17).italic())
+                .foregroundStyle(Theme.boneDim)
+                .padding(.vertical, 18)
+        }
+        ForEach(rows) { item in
+            StartupRow(item: item, items: items)
+            Hairline()
         }
     }
+}
 
-    private func row(_ item: StartupItem) -> some View {
-        HStack(spacing: 14) {
-            IconBadge(symbol: "gearshape", tint: item.isEnabled ? Theme.accent : .secondary)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.displayName.capitalized).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                Text(item.label).font(Theme.label).foregroundStyle(.secondary).lineLimit(1)
+private struct StartupRow: View {
+    let item: StartupItem
+    @ObservedObject var items: StartupItems
+    @StateObject private var hoverState = ViewState(false)
+
+    var body: some View {
+        HStack(spacing: 16) {
+            if item.isUserScope {
+                GlowToggle(isOn: item.isEnabled) { items.setEnabled(item, !item.isEnabled) }
+            } else {
+                Circle()
+                    .strokeBorder(Theme.bone.opacity(0.18), style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
+                    .frame(width: 16, height: 16)
+                    .padding(8)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.displayName.capitalized)
+                    .font(Theme.serif(17, .regular))
+                    .foregroundStyle(Theme.bone)
+                    .lineLimit(1)
+                Text(item.label)
+                    .font(Theme.mono(10))
+                    .foregroundStyle(Theme.boneDim)
+                    .lineLimit(1)
             }
             Spacer()
             Button { items.reveal(item) } label: {
-                Image(systemName: "magnifyingglass")
+                Text("Reveal ↗").monoLabel(Theme.amber, size: 9.5)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .help("Show in Finder")
-
-            if item.isUserScope {
-                Toggle("", isOn: Binding(
-                    get: { item.isEnabled },
-                    set: { items.setEnabled(item, $0) }
-                ))
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .labelsHidden()
+            .opacity(hoverState.value ? 1 : 0)
+            if !item.isUserScope {
+                Text("System")
+                    .monoLabel(size: 9)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.14), lineWidth: 0.5))
             }
         }
-        .padding(.vertical, 10)
-        .opacity(item.isEnabled ? 1 : 0.6)
+        .padding(.vertical, 8)
+        .opacity(item.isUserScope ? (item.isEnabled ? 1 : 0.5) : 0.55)
+        .contentShape(Rectangle())
+        .onHover { hoverState.value = $0 }
+        .animation(.smooth(duration: 0.2), value: hoverState.value)
     }
 }
