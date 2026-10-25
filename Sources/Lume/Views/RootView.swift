@@ -60,6 +60,22 @@ struct RootView: View {
             TabBar(selection: $navigator.page, namespace: tabs)
                 .padding(.bottom, 24)
         }
+        // A small gear in the title bar's far corner, level with the window buttons.
+        .overlay(alignment: .topTrailing) {
+            SettingsLink {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Theme.secondary)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Settings")
+            .accessibilityLabel("Settings")
+            .padding(.top, 1)
+            .padding(.trailing, 12)
+            .ignoresSafeArea()
+        }
         .preferredColorScheme(.light)
         .animation(.easeInOut(duration: 0.22), value: navigator.page)
         .onChange(of: navigator.rescans) { rescan() }
