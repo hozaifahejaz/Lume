@@ -41,6 +41,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Launched via `swift run` there is no bundle, so promote to a regular app.
         NSApp.setActivationPolicy(.regular)
+        // Set the icon explicitly so the Dock never shows a stale generic one; skipped under `swift run`.
+        if let url = Bundle.main.url(forResource: "Lume", withExtension: "icns"), let icon = NSImage(contentsOf: url) {
+            NSApp.applicationIconImage = icon
+        }
         NSApp.activate(ignoringOtherApps: true)
     }
 

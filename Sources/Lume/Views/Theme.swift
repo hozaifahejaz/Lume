@@ -121,11 +121,16 @@ struct GlassPanel<Content: View>: View {
 }
 
 /// A pale sky-to-lilac field with slow pastel light drifting across it, for the glass to refract.
+/// The drift is so slow (a cycle takes over a minute) that five frames a second looks continuous;
+/// it stops entirely when the window isn't frontmost or Reduce Motion is on.
 struct Backdrop: View {
+    @Environment(\.controlActiveState) private var activeState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         ZStack {
             base
-            TimelineView(.animation(minimumInterval: 1.0 / 20, paused: false)) { timeline in
+            TimelineView(.animation(minimumInterval: 1.0 / 5, paused: activeState != .key || reduceMotion)) { timeline in
                 let t = timeline.date.timeIntervalSinceReferenceDate
                 GeometryReader { geo in
                     let w = geo.size.width

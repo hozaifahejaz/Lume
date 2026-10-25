@@ -1,7 +1,9 @@
 import Foundation
+import AppKit
 import Darwin
 
 /// Samples CPU, memory and memory pressure once a second using Mach APIs; disk space every 30 seconds, off the main actor.
+/// With no window on screen (only the menu bar icon), sampling eases off to every 5 seconds.
 @MainActor
 final class SystemMonitor: ObservableObject {
     @Published private(set) var cpu: Double = 0
@@ -13,21 +15,56 @@ final class SystemMonitor: ObservableObject {
     private var timer: Timer?
     private var diskTimer: Timer?
     private var previousTicks: [CPUTicks] = []
+    private var interval: TimeInterval = 0
+    private var observers: [NSObjectProtocol] = []
 
     init() {
         sample()
         refreshDisk()
-        // .common keeps both ticking while a menu is open.
-        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.sample() }
-        }
         let diskTimer = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refreshDisk() }
         }
-        RunLoop.main.add(timer, forMode: .common)
         RunLoop.main.add(diskTimer, forMode: .common)
-        self.timer = timer
         self.diskTimer = diskTimer
+        schedule(every: 1)
+
+        // Any window appearing, hiding, closing or being covered can change whether anyone is looking.
+        let names: [Notification.Name] = [
+            NSWindow.didChangeOcclusionStateNotification, NSWindow.didBecomeKeyNotification,
+            NSWindow.willCloseNotification, NSWindow.didMiniaturizeNotification,
+            NSWindow.didDeminiaturizeNotification, NSApplication.didHideNotification,
+            NSApplication.didUnhideNotification,
+        ]
+        observers = names.map { name in
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                // Let a closing window finish leaving the screen before looking.
+                DispatchQueue.main.async { MainActor.assumeIsolated { self?.updatePace() } }
+            }
+        }
+    }
+
+    /// One second while a Lume window or the menu bar panel is on screen, five otherwise.
+    private func updatePace() {
+        let watched = NSApp.windows.contains { window in
+            window.isVisible && window.occlusionState.contains(.visible)
+                // The status item's own window is always on screen; it doesn't count as someone watching.
+                && !window.className.contains("StatusBarWindow")
+        }
+        schedule(every: watched ? 1 : 5)
+    }
+
+    private func schedule(every seconds: TimeInterval) {
+        guard seconds != interval else { return }
+        interval = seconds
+        timer?.invalidate()
+        // .common keeps it ticking while a menu is open.
+        let timer = Timer(timeInterval: seconds, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.sample() }
+        }
+        timer.tolerance = seconds * 0.1
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+        if seconds == 1 { sample() }
     }
 
     /// Re-reads free space in the background; the volume query can be slow.
