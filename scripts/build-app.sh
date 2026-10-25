@@ -1,12 +1,19 @@
 #!/bin/bash
-# Builds Lume.app into ./build. Requires Xcode command line tools (Swift 5.9+) on macOS 14+.
+# Builds Lume.app into ./build (or ./build/<arch> with ARCH set). Requires Xcode command line tools (Swift 5.9+) on macOS 14+.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-swift build -c release
-
-BIN="$(swift build -c release --show-bin-path)/Lume"
+# ARCH=arm64 or ARCH=x86_64 builds for that architecture alone, into build/<arch>/Lume.app.
+ARCH="${ARCH:-}"
+ARCH_FLAGS=()
 APP="build/Lume.app"
+if [ -n "$ARCH" ]; then
+    ARCH_FLAGS=(--arch "$ARCH")
+    APP="build/$ARCH/Lume.app"
+fi
+swift build -c release ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"}
+
+BIN="$(swift build -c release ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"} --show-bin-path)/Lume"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
