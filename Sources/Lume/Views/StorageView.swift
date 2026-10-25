@@ -9,7 +9,7 @@ struct StorageView: View {
         VStack(alignment: .leading, spacing: Theme.gap) {
             PageHeader(title: "\(monitor.disk.used.bytes) used of \(monitor.disk.total.bytes)",
                        subtitle: "\(monitor.disk.available.bytes) available") {
-                Button { Task { await scanner.scan() } } label: {
+                Button { Task { await scanner.rescan() } } label: {
                     Label("Rescan", systemImage: "arrow.clockwise")
                 }
                 .glassButton()
@@ -26,8 +26,8 @@ struct StorageView: View {
 
             GlassPanel(fill: false) {
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("Largest folders").font(Theme.sectionTitle).foregroundStyle(Theme.ink)
+                    HStack(spacing: 12) {
+                        Breadcrumbs(path: scanner.path) { scanner.goBack(to: $0) }
                         Spacer()
                         if scanner.isScanning {
                             ProgressView(value: scanner.progress)
@@ -39,23 +39,43 @@ struct StorageView: View {
                     .padding(.horizontal, 8)
                     .frame(height: 24)
 
-                    if scanner.folders.isEmpty && !scanner.isScanning {
-                        Text("Nothing measured yet.")
-                            .font(Theme.body)
-                            .foregroundStyle(Theme.secondary)
-                            .padding(8)
+                    let rows = scanner.visible
+                    Group {
+                        if rows.isEmpty && !scanner.isScanning {
+                            Text(scanner.path.isEmpty ? "Nothing measured yet." : "This folder is empty.")
+                                .font(Theme.body)
+                                .foregroundStyle(Theme.secondary)
+                                .padding(8)
+                        }
+                        // Hugs its rows, and drops the smallest ones if the window is short.
+                        FittingRows(items: rows, rowHeight: 36) { folder in
+                            FolderRow(folder: folder, first: folder.id == rows.first?.id) { scanner.open(folder) }
+                        }
+                        .frame(maxHeight: CGFloat(rows.count) * 36)
                     }
+                    .id(scanner.path.last?.url)
+                    .transition(.opacity.combined(with: .offset(x: 12)))
 
-                    // Hugs its rows, and drops the smallest ones if the window is short.
-                    FittingRows(items: scanner.folders, rowHeight: 36) { folder in
-                        FolderRow(folder: folder, first: folder.id == scanner.folders.first?.id)
+                    if scanner.protectedSkipped && scanner.path.isEmpty {
+                        HStack(spacing: 6) {
+                            Text("Some private folders, such as Mail, can’t be measured without Full Disk Access.")
+                                .foregroundStyle(Theme.tertiary)
+                            Link("Open Settings", destination: URL(
+                                string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!)
+                                .foregroundStyle(Theme.accent)
+                        }
+                        .font(Theme.caption)
+                        .lineLimit(1)
+                        .padding(.horizontal, 8)
+                        .padding(.top, 4)
                     }
-                    .frame(maxHeight: CGFloat(scanner.folders.count) * 36)
                 }
             }
             .frame(maxHeight: .infinity, alignment: .top)
         }
         .animation(.smooth(duration: 0.5), value: scanner.folders)
+        .animation(.smooth(duration: 0.35), value: scanner.path)
+        .animation(.smooth(duration: 0.35), value: scanner.children)
         .task { if scanner.folders.isEmpty && !scanner.isScanning { await scanner.scan() } }
     }
 
@@ -67,18 +87,18 @@ struct StorageView: View {
         var shown: [UsageSegment] = []
         var sum: Int64 = 0
         for folder in scanner.folders where Double(folder.size) >= threshold && shown.count < 4 {
-            shown.append(UsageSegment(name: folder.name, size: folder.size,
+            shown.append(UsageSegment(id: folder.url.path, name: folder.name, size: folder.size,
                                       color: Theme.storageTones[shown.count]))
             sum += folder.size
         }
         // Never negative: if the folders somehow add up to more than "used", the bar scales to their sum.
-        shown.append(UsageSegment(name: "System & other", size: max(0, used - sum), color: Theme.storageOther))
+        shown.append(UsageSegment(id: "other", name: "System & other", size: max(0, used - sum), color: Theme.storageOther))
         return shown
     }
 
     private var legend: some View {
         let items = scanner.isScanning
-            ? [UsageSegment(name: "Used", size: monitor.disk.used, color: Theme.graphite.opacity(0.45))]
+            ? [UsageSegment(id: "used", name: "Used", size: monitor.disk.used, color: Theme.graphite.opacity(0.45))]
             : segments
         return FlowRow(spacing: 24, lineSpacing: 8) {
             ForEach(items) { segment in
@@ -99,7 +119,8 @@ struct StorageView: View {
 }
 
 struct UsageSegment: Identifiable, Equatable {
-    var id: String { name }
+    /// The folder's path, so two folders with the same name never collide.
+    let id: String
     let name: String
     let size: Int64
     let color: Color
@@ -139,36 +160,90 @@ private struct UsageBar: View {
     }
 }
 
+/// "Largest folders", or "Largest folders › Library › Application Support" once a folder is open.
+/// Every crumb but the last goes back to that level.
+private struct Breadcrumbs: View {
+    let path: [FolderUsage]
+    let goBack: (FolderUsage?) -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            crumb("Largest folders", isLast: path.isEmpty) { goBack(nil) }
+            ForEach(path) { folder in
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Theme.tertiary)
+                    .accessibilityHidden(true)
+                crumb(folder.name, isLast: folder == path.last) { goBack(folder) }
+            }
+        }
+        .lineLimit(1)
+    }
+
+    @ViewBuilder
+    private func crumb(_ title: String, isLast: Bool, action: @escaping () -> Void) -> some View {
+        if isLast {
+            Text(title).font(Theme.sectionTitle).foregroundStyle(Theme.ink)
+        } else {
+            Button(action: action) {
+                Text(title).font(Theme.sectionTitle).foregroundStyle(Theme.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Back to \(title)")
+        }
+    }
+}
+
 private struct FolderRow: View {
     let folder: FolderUsage
     let first: Bool
+    let onOpen: () -> Void
+    @StateObject private var hovering = ViewState(false)
+
+    private var canOpen: Bool { folder.isDirectory && !folder.isHiddenGroup }
 
     var body: some View {
         HStack(spacing: 12) {
-            AppIconView(image: NSWorkspace.shared.icon(forFile: folder.url.path))
+            AppIconView(image: NSWorkspace.shared.icon(
+                forFile: folder.isHiddenGroup ? FileManager.default.homeDirectoryForCurrentUser.path : folder.url.path))
             Text(folder.name)
                 .font(Theme.body)
                 .foregroundStyle(Theme.ink)
                 .lineLimit(1)
+                .truncationMode(.middle)
             Spacer(minLength: 16)
             Text(folder.size.bytes)
                 .font(Theme.digits)
                 .foregroundStyle(Theme.secondary)
-            Button {
-                NSWorkspace.shared.activateFileViewerSelecting([folder.url])
-            } label: {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.tertiary)
+            // Hidden files are many folders, not one, so there's nothing single to show.
+            if !folder.isHiddenGroup {
+                Button {
+                    NSWorkspace.shared.activateFileViewerSelecting([folder.url])
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Theme.tertiary)
+                }
+                .buttonStyle(.plain)
+                .help("Show in Finder")
+                .accessibilityLabel("Show \(folder.name) in Finder")
             }
-            .buttonStyle(.plain)
-            .help("Show in Finder")
+            Image(systemName: "chevron.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Theme.tertiary)
+                .opacity(canOpen ? (hovering.value ? 1 : 0.5) : 0)
+                .accessibilityHidden(true)
         }
         .frame(maxHeight: .infinity)
         .overlay(alignment: .top) {
             if !first { Hairline().padding(.leading, 32) }
         }
         .hoverWash()
+        .onHover { hovering.value = $0 }
+        .onTapGesture { if canOpen { onOpen() } }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(canOpen ? .isButton : [])
+        .accessibilityAction { if canOpen { onOpen() } }
     }
 }
 
