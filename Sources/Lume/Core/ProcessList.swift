@@ -12,6 +12,8 @@ struct ProcessUsage: Identifiable, Hashable {
     let cpu: Double
     /// The enclosing .app bundle, when the process belongs to one.
     let appPath: String?
+    /// The executable of the representative process, for choosing an icon when there's no app.
+    let path: String
     /// Pid of the user-facing app to quit; nil for background and system processes, which can't be quit here.
     let quitPID: Int32?
 
@@ -92,7 +94,9 @@ final class ProcessList: ObservableObject {
             if let path = app.bundleURL?.path { regularApps[path] = app.processIdentifier }
         }
 
-        struct Bucket { var pid: Int32; var name: String; var memory: Int64 = 0; var cpu: Double = 0; var appPath: String? }
+        struct Bucket {
+            var pid: Int32; var name: String; var memory: Int64 = 0; var cpu: Double = 0; var appPath: String?; var path: String
+        }
         var buckets: [String: Bucket] = [:]
 
         for row in sample.rows {
@@ -109,11 +113,15 @@ final class ProcessList: ObservableObject {
                 pid: row.pid,
                 name: appPath.map { FileManager.default.displayName(atPath: $0).replacingOccurrences(of: ".app", with: "") }
                     ?? (row.path as NSString).lastPathComponent,
-                appPath: appPath
+                appPath: appPath,
+                path: row.path
             )
             bucket.memory += row.memory
             bucket.cpu += cpu
-            if let appPath, regularApps[appPath] == row.pid { bucket.pid = row.pid }
+            if let appPath, regularApps[appPath] == row.pid {
+                bucket.pid = row.pid
+                bucket.path = row.path
+            }
             buckets[key] = bucket
         }
 
@@ -122,7 +130,7 @@ final class ProcessList: ObservableObject {
 
         return buckets.values.map { bucket in
             ProcessUsage(id: bucket.pid, name: bucket.name, memory: bucket.memory, cpu: bucket.cpu,
-                         appPath: bucket.appPath, quitPID: bucket.appPath.flatMap { regularApps[$0] })
+                         appPath: bucket.appPath, path: bucket.path, quitPID: bucket.appPath.flatMap { regularApps[$0] })
         }
     }
 
@@ -158,14 +166,18 @@ final class ProcessList: ObservableObject {
                       let pid = Int32(parts[0]), pid != ownPID,
                       let rss = Int64(parts[1]),
                       let cpu = Double(parts[2]) else { return nil }
-                return Row(pid: pid, memory: rss * 1024, psCPU: cpu, path: String(parts[3]),
-                           cpuTime: cpuTime(pid, timebase))
+                // Footprint is what Activity Monitor calls Memory; RSS counts shared pages and overstates it.
+                let usage = rusage(pid, timebase)
+                return Row(pid: pid, memory: usage.map { Int64(clamping: $0.footprint) } ?? rss * 1024, psCPU: cpu,
+                           path: String(parts[3]), cpuTime: usage?.cpuTime)
             }
         return Sample(rows: rows, time: DispatchTime.now().uptimeNanoseconds)
     }
 
-    /// Total user + system CPU time in nanoseconds, or nil if the process can't be inspected.
-    nonisolated private static func cpuTime(_ pid: Int32, _ timebase: mach_timebase_info_data_t) -> UInt64? {
+    /// Total user + system CPU time in nanoseconds and the physical footprint in bytes,
+    /// or nil if the process can't be inspected.
+    nonisolated private static func rusage(_ pid: Int32, _ timebase: mach_timebase_info_data_t)
+        -> (cpuTime: UInt64, footprint: UInt64)? {
         var info = rusage_info_v2()
         let result = withUnsafeMutablePointer(to: &info) {
             $0.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) {
@@ -174,6 +186,6 @@ final class ProcessList: ObservableObject {
         }
         guard result == 0 else { return nil }
         let ticks = info.ri_user_time &+ info.ri_system_time
-        return ticks &* UInt64(timebase.numer) / UInt64(max(timebase.denom, 1))
+        return (ticks &* UInt64(timebase.numer) / UInt64(max(timebase.denom, 1)), info.ri_phys_footprint)
     }
 }

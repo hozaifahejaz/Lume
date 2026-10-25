@@ -82,7 +82,9 @@ extension View {
 enum AppIcons {
     private static var cache: [String: NSImage] = [:]
 
-    static func forProcess(_ pid: Int32) -> NSImage? {
+    /// Prefers the app path already known from grouping; asks the kernel only when there isn't one.
+    static func forProcess(_ pid: Int32, appPath: String? = nil) -> NSImage? {
+        if let appPath, let image = forPath(appPath) { return image }
         var buffer = [CChar](repeating: 0, count: 4096)
         if proc_pidpath(pid, &buffer, UInt32(buffer.count)) > 0,
            let image = forPath(String(cString: buffer)) {
@@ -104,6 +106,19 @@ enum AppIcons {
         let image = NSWorkspace.shared.icon(forFile: appPath)
         cache[appPath] = image
         return image
+    }
+}
+
+/// A neutral symbol for a process with no app: a terminal for things you installed,
+/// gears for the system's own daemons, a dashed app for anything else.
+enum ProcessSymbol {
+    static func forPath(_ path: String) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        if ["/usr/local/", "/opt/homebrew/", home + "/"].contains(where: path.hasPrefix) { return "terminal" }
+        if ["/usr/libexec/", "/usr/sbin/", "/System/", "/sbin/", "/usr/bin/"].contains(where: path.hasPrefix) {
+            return "gearshape.2"
+        }
+        return "app.dashed"
     }
 }
 

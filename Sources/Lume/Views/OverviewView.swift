@@ -146,7 +146,11 @@ private struct ProcessRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            AppIconView(image: AppIcons.forProcess(process.id))
+            if let image = AppIcons.forProcess(process.id, appPath: process.appPath) {
+                AppIconView(image: image)
+            } else {
+                IconTile(symbol: ProcessSymbol.forPath(process.path), size: Theme.rowIcon)
+            }
             Text(process.name)
                 .font(Theme.body)
                 .foregroundStyle(Theme.ink)
@@ -164,6 +168,7 @@ private struct ProcessRow: View {
             }
             .buttonStyle(.plain)
             .help("Quit \(process.name)")
+            .accessibilityLabel("Quit \(process.name)")
             .opacity(process.canQuit && hovering.value ? 1 : 0)
             .disabled(!process.canQuit)
         }
