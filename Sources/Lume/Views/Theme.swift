@@ -12,50 +12,53 @@ extension Color {
     }
 }
 
-/// Light and airy: pastel light behind Liquid Glass, near-black rounded type, one calm blue.
+/// Quiet and light: glass over a pale backdrop, near-black type, graphite data.
+/// System blue is reserved for the primary action and the selected tab; red appears only past 85%.
 enum Theme {
     static let ink = Color(hex: 0x1C1C1E)
-    static let secondary = Color(hex: 0x3C3C43, opacity: 0.64)
-    static let tertiary = Color(hex: 0x3C3C43, opacity: 0.36)
+    static let secondary = Color(hex: 0x3C3C43, opacity: 0.78)
+    static let tertiary = Color(hex: 0x3C3C43, opacity: 0.5)
+    static let graphite = Color(hex: 0x3A3A3C)
+    static let hairline = Color.black.opacity(0.08)
+    static let track = Color.black.opacity(0.06)
 
     static let accent = Color(hex: 0x0A84FF)
-    static let warm = Color(hex: 0xFF9F0A)
-    static let hot = Color(hex: 0xFF453A)
+    static let alert = Color(hex: 0xFF453A, opacity: 0.85)
 
-    /// Base hues for the processor, memory and disk rings.
-    static let cpuHue = accent
-    static let memoryHue = Color(hex: 0x5E5CE6)
-    static let diskHue = Color(hex: 0x30B0C7)
+    /// Muted storage tones, darkest for the largest folder; the last is "System & other".
+    static let storageTones: [Color] = [
+        Color(hex: 0x3A3A3C), Color(hex: 0x636366), Color(hex: 0x8A96AA), Color(hex: 0xAEAEB2),
+    ]
+    static let storageOther = Color(hex: 0xC7C7CC)
 
     static let sky = Color(hex: 0xBFD8FF)
     static let lilac = Color(hex: 0xE3D5FF)
     static let mint = Color(hex: 0xCFF3E6)
     static let peach = Color(hex: 0xFFE1CC)
 
-    /// Deeper pastels for data so segments stay readable on glass.
-    static let palette: [Color] = ([0x7FB2FF, 0xB59BFF, 0x6FD6B0, 0xFFB27F, 0xFF9DBE, 0xF2CF5B, 0x8AD3E6, 0xC4B8A8] as [UInt32])
-        .map { Color(hex: $0) }
+    // Geometry, on an 8pt grid
+    static let margin: CGFloat = 32
+    static let gap: CGFloat = 24
+    static let panelPadding: CGFloat = 20
+    static let panelRadius: CGFloat = 24
+    static let rowIcon: CGFloat = 20
+    static let tileSize: CGFloat = 28
+    static let tileRadius: CGFloat = 7
 
-    static let radius: CGFloat = 28
-    static let gutter: CGFloat = 40
-    static let column: CGFloat = 780
+    // Type scale
+    static let headline = Font.system(size: 34, weight: .light)
+    static let number = Font.system(size: 40, weight: .light, design: .rounded).monospacedDigit()
+    static let sectionTitle = Font.system(size: 13, weight: .semibold)
+    static let body = Font.system(size: 13)
+    static let digits = Font.system(size: 12, weight: .regular, design: .monospaced)
+    static let caption = Font.system(size: 12, weight: .medium)
 
-    static func number(_ size: CGFloat, _ weight: Font.Weight = .light) -> Font {
-        .system(size: size, weight: weight, design: .rounded).monospacedDigit()
-    }
+    /// True once the percentage a person would read is above 85.
+    static func isHigh(_ fraction: Double) -> Bool { (fraction * 100).rounded() > 85 }
 
-    static func rounded(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: weight, design: .rounded)
-    }
-
-    static let label = Font.system(size: 12, weight: .medium, design: .rounded)
-    static let body = Font.system(size: 13, design: .rounded)
-
-    /// Blue while there is headroom, orange past 70%, red past 90%.
-    static func tint(for fraction: Double, base: Color = accent) -> Color {
-        if fraction >= 0.9 { return hot }
-        if fraction >= 0.7 { return warm }
-        return base
+    /// Graphite normally; a muted red once a value passes 85%.
+    static func level(_ fraction: Double) -> Color {
+        isHigh(fraction) ? alert : graphite
     }
 }
 
@@ -82,12 +85,12 @@ extension View {
                     if let tint { shape.fill(tint) }
                     shape.stroke(Color.white.opacity(0.75), lineWidth: 0.5)
                 }
-                .shadow(color: .black.opacity(0.07), radius: 18, y: 8)
+                .shadow(color: .black.opacity(0.06), radius: 16, y: 8)
             }
         }
     }
 
-    /// Glass capsule buttons, with the tinted variant for the primary action.
+    /// Glass capsule buttons.
     @ViewBuilder
     func glassButton(prominent: Bool = false) -> some View {
         if #available(macOS 26, *) {
@@ -96,18 +99,29 @@ extension View {
             if prominent { buttonStyle(.borderedProminent) } else { buttonStyle(.bordered) }
         }
     }
+
+    /// Scrolling confined to a panel: no bounce when it fits, no indicators, no edge fade.
+    @ViewBuilder
+    func quietScroll() -> some View {
+        let base = scrollIndicators(.never).scrollBounceBehavior(.basedOnSize)
+        if #available(macOS 26, *) {
+            base.scrollEdgeEffectHidden(true, for: .all)
+        } else {
+            base
+        }
+    }
 }
 
 /// A large rounded glass panel that content sits on.
-struct GlassSlab<Content: View>: View {
-    var padding: CGFloat = 24
+struct GlassPanel<Content: View>: View {
+    var fill = true
     @ViewBuilder var content: Content
 
     var body: some View {
         content
-            .padding(padding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .glass(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+            .padding(Theme.panelPadding)
+            .frame(maxWidth: .infinity, maxHeight: fill ? .infinity : nil, alignment: .topLeading)
+            .glass(RoundedRectangle(cornerRadius: Theme.panelRadius, style: .continuous))
     }
 }
 
@@ -129,6 +143,7 @@ struct Backdrop: View {
                     }
                 }
             }
+            .opacity(0.7)
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
@@ -140,14 +155,14 @@ struct Backdrop: View {
                 width: 3, height: 3,
                 points: [[0, 0], [0.5, 0], [1, 0], [0, 0.5], [0.55, 0.45], [1, 0.5], [0, 1], [0.5, 1], [1, 1]],
                 colors: [
-                    Color(hex: 0xEAF3FF), Color(hex: 0xF5F3FF), Color(hex: 0xF1EAFF),
-                    Color(hex: 0xEDF6FF), Color(hex: 0xFBFBFF), Color(hex: 0xF5EEFF),
-                    Color(hex: 0xEDFBF5), Color(hex: 0xFFF7F0), Color(hex: 0xFFF0E6),
+                    Color(hex: 0xEDF3FC), Color(hex: 0xF5F4FA), Color(hex: 0xF2EEFA),
+                    Color(hex: 0xF0F5FB), Color(hex: 0xFAFAFC), Color(hex: 0xF5F1FA),
+                    Color(hex: 0xF0F8F5), Color(hex: 0xFAF7F3), Color(hex: 0xFAF2EC),
                 ]
             )
         } else {
             LinearGradient(
-                colors: [Color(hex: 0xEAF3FF), Color(hex: 0xFBFBFF), Color(hex: 0xFFF0E6)],
+                colors: [Color(hex: 0xEDF3FC), Color(hex: 0xFAFAFC), Color(hex: 0xFAF2EC)],
                 startPoint: .topLeading, endPoint: .bottomTrailing
             )
         }
@@ -155,27 +170,35 @@ struct Backdrop: View {
 
     private func blob(_ color: Color, _ size: CGFloat, _ x: CGFloat, _ y: CGFloat) -> some View {
         Circle()
-            .fill(RadialGradient(colors: [color.opacity(0.9), color.opacity(0)], center: .center,
+            .fill(RadialGradient(colors: [color.opacity(0.8), color.opacity(0)], center: .center,
                                  startRadius: 0, endRadius: size / 2))
             .frame(width: size, height: size)
             .position(x: x, y: y)
     }
 }
 
+/// Page headline: a calm sentence in large light type with one quiet line beneath.
 struct PageHeader<Trailing: View>: View {
     let title: String
     let subtitle: String
     @ViewBuilder var trailing: Trailing
 
     var body: some View {
-        HStack(alignment: .bottom) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(Theme.rounded(32, .bold)).foregroundStyle(Theme.ink)
-                Text(subtitle).font(Theme.rounded(14)).foregroundStyle(Theme.secondary)
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                    .font(Theme.headline)
+                    .foregroundStyle(Theme.ink)
+                    .contentTransition(.opacity)
+                Text(subtitle)
+                    .font(Theme.body)
+                    .foregroundStyle(Theme.secondary)
+                    .contentTransition(.opacity)
             }
             Spacer()
             trailing
         }
+        .animation(.smooth, value: title)
     }
 }
 
@@ -185,34 +208,67 @@ extension PageHeader where Trailing == EmptyView {
     }
 }
 
-struct IconBadge: View {
+/// A small neutral glass tile holding a graphite SF Symbol.
+struct IconTile: View {
     let symbol: String
-    var tint: Color = Theme.accent
+    var size: CGFloat = Theme.tileSize
 
     var body: some View {
         Image(systemName: symbol)
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(tint)
-            .frame(width: 34, height: 34)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(tint.opacity(0.13)))
+            .symbolRenderingMode(.hierarchical)
+            .font(.system(size: size * 0.48, weight: .medium))
+            .foregroundStyle(Theme.graphite)
+            .frame(width: size, height: size)
+            .glass(RoundedRectangle(cornerRadius: size * 0.25, style: .continuous))
     }
 }
 
-/// Soft fade with a slight lift and scale, used between pages.
-struct LiftFade: ViewModifier {
-    let active: Bool
+/// A real app icon, or the neutral tile when there is no app behind it.
+struct AppIconView: View {
+    let image: NSImage?
+    var size: CGFloat = Theme.rowIcon
+    var fallback: String = "gearshape"
 
-    func body(content: Content) -> some View {
-        content
-            .opacity(active ? 0 : 1)
-            .scaleEffect(active ? 0.985 : 1)
-            .offset(y: active ? 10 : 0)
+    var body: some View {
+        if let image {
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: size, height: size)
+        } else {
+            Image(systemName: fallback)
+                .font(.system(size: size * 0.62, weight: .regular))
+                .foregroundStyle(Theme.tertiary)
+                .frame(width: size, height: size)
+        }
     }
 }
 
-extension AnyTransition {
-    static var liftFade: AnyTransition {
-        .modifier(active: LiftFade(active: true), identity: LiftFade(active: false))
+/// A 3pt capsule bar: graphite on a faint track, red past 85%.
+struct HairBar: View {
+    let fraction: Double
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Theme.track)
+                Capsule().fill(Theme.level(fraction).opacity(0.7))
+                    .frame(width: max(3, geo.size.width * min(max(fraction, 0), 1)))
+            }
+        }
+        .frame(height: 3)
+        .animation(.smooth, value: fraction)
+    }
+}
+
+/// A 0.5pt divider in either direction.
+struct Hairline: View {
+    var vertical = false
+
+    var body: some View {
+        Rectangle()
+            .fill(Theme.hairline)
+            .frame(width: vertical ? 0.5 : nil, height: vertical ? nil : 0.5)
     }
 }
 
@@ -221,16 +277,25 @@ extension SystemMonitor {
 
     var mood: String {
         switch load {
-        case ..<0.7: return "All good"
-        case ..<0.9: return "Busy"
-        default: return "Running hot"
+        case ..<0.7: return "Running smoothly"
+        case ..<0.85: return "Busy"
+        default: return "Under heavy load"
         }
     }
 }
 
 extension Int64 {
+    /// Calm, decimal sizes: "106 GB", "19.8 GB", "400 MB", "0 KB".
     var bytes: String {
-        ByteCountFormatter.string(fromByteCount: self, countStyle: .file)
+        let units = ["KB", "MB", "GB", "TB"]
+        var value = Double(Swift.max(self, 0)) / 1000
+        var index = 0
+        while value >= 999.5 && index < units.count - 1 {
+            value /= 1000
+            index += 1
+        }
+        let text = value >= 99.95 || value == 0 ? String(format: "%.0f", value) : String(format: "%.1f", value)
+        return "\(text) \(units[index])"
     }
 }
 

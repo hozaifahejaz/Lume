@@ -5,11 +5,10 @@ struct StorageView: View {
     @EnvironmentObject private var monitor: SystemMonitor
     @ObservedObject var scanner: StorageScanner
 
-    private var segmentCount: Int { Theme.palette.count }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            PageHeader(title: "Storage", subtitle: "Where your space is going.") {
+        VStack(alignment: .leading, spacing: Theme.gap) {
+            PageHeader(title: "\(monitor.disk.used.bytes) used of \(monitor.disk.total.bytes)",
+                       subtitle: "\(monitor.disk.available.bytes) available") {
                 Button { Task { await scanner.scan() } } label: {
                     Label("Rescan", systemImage: "arrow.clockwise")
                 }
@@ -17,114 +16,197 @@ struct StorageView: View {
                 .disabled(scanner.isScanning)
             }
 
-            GlassSlab(padding: 28) {
-                VStack(alignment: .leading, spacing: 22) {
-                    HStack(alignment: .firstTextBaseline, spacing: 40) {
-                        figure(monitor.disk.used.bytes, "Used of \(monitor.disk.total.bytes)")
-                        figure(monitor.disk.available.bytes, "Available")
-                        Spacer()
-                    }
-                    segmentBar
+            GlassPanel(fill: false) {
+                VStack(alignment: .leading, spacing: 16) {
+                    UsageBar(total: monitor.disk.total, segments: scanner.isScanning ? nil : segments,
+                             used: monitor.disk.used)
+                    legend
                 }
             }
 
-            GlassSlab(padding: 10) {
-                VStack(alignment: .leading, spacing: 2) {
+            GlassPanel(fill: false) {
+                VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("Largest folders").font(Theme.rounded(17, .semibold)).foregroundStyle(Theme.ink)
+                        Text("Largest folders").font(Theme.sectionTitle).foregroundStyle(Theme.ink)
                         Spacer()
                         if scanner.isScanning {
                             ProgressView(value: scanner.progress)
                                 .progressViewStyle(.linear)
-                                .tint(Theme.accent)
+                                .tint(Theme.graphite)
                                 .frame(width: 120)
                         }
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, 8)
+                    .frame(height: 24)
 
                     if scanner.folders.isEmpty && !scanner.isScanning {
                         Text("Nothing measured yet.")
                             .font(Theme.body)
                             .foregroundStyle(Theme.secondary)
-                            .padding(12)
+                            .padding(8)
                     }
 
-                    ForEach(Array(scanner.folders.enumerated()), id: \.element.id) { index, folder in
-                        FolderRow(folder: folder, color: color(index))
+                    // Hugs its rows, and drops the smallest ones if the window is short.
+                    FittingRows(items: scanner.folders, rowHeight: 36) { folder in
+                        FolderRow(folder: folder, first: folder.id == scanner.folders.first?.id)
                     }
+                    .frame(maxHeight: CGFloat(scanner.folders.count) * 36)
                 }
             }
+            .frame(maxHeight: .infinity, alignment: .top)
         }
         .animation(.smooth(duration: 0.5), value: scanner.folders)
         .task { if scanner.folders.isEmpty && !scanner.isScanning { await scanner.scan() } }
     }
 
-    private func figure(_ value: String, _ label: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(value)
-                .font(Theme.number(56))
-                .foregroundStyle(Theme.ink)
-                .contentTransition(.numericText())
-            Text(label).font(Theme.label).foregroundStyle(Theme.secondary)
+    /// The largest folders that are at least 3% of the disk, then "System & other" for the
+    /// rest of the used space, so the segments add up exactly to what the disk reports as used.
+    private var segments: [UsageSegment] {
+        let used = max(monitor.disk.used, 0)
+        let threshold = Double(monitor.disk.total) * 0.03
+        var shown: [UsageSegment] = []
+        var sum: Int64 = 0
+        for folder in scanner.folders where Double(folder.size) >= threshold && shown.count < 4 {
+            guard sum + folder.size <= used else { break }
+            shown.append(UsageSegment(name: folder.name, size: folder.size,
+                                      color: Theme.storageTones[shown.count]))
+            sum += folder.size
+        }
+        shown.append(UsageSegment(name: "System & other", size: used - sum, color: Theme.storageOther))
+        return shown
+    }
+
+    private var legend: some View {
+        let items = scanner.isScanning
+            ? [UsageSegment(name: "Used", size: monitor.disk.used, color: Theme.graphite.opacity(0.45))]
+            : segments
+        return FlowRow(spacing: 24, lineSpacing: 8) {
+            ForEach(items) { segment in
+                legendItem(segment.name, segment.size, Circle().fill(segment.color))
+            }
+            legendItem("Free", monitor.disk.available,
+                       Circle().fill(Theme.track).overlay(Circle().strokeBorder(Theme.hairline, lineWidth: 0.5)))
         }
     }
 
-    /// The largest folders as pastel segments of the whole disk.
-    private var segmentBar: some View {
+    private func legendItem<Dot: View>(_ name: String, _ size: Int64, _ dot: Dot) -> some View {
+        HStack(spacing: 8) {
+            dot.frame(width: 8, height: 8)
+            Text(name).font(Theme.body).foregroundStyle(Theme.ink).lineLimit(1)
+            Text(size.bytes).font(Theme.body).foregroundStyle(Theme.secondary).lineLimit(1)
+        }
+    }
+}
+
+struct UsageSegment: Identifiable, Equatable {
+    var id: String { name }
+    let name: String
+    let size: Int64
+    let color: Color
+}
+
+/// The disk as one capsule: the filled part is exactly used / total, split into muted segments
+/// with 1pt gaps; free space is the plain track. While scanning, one neutral fill.
+private struct UsageBar: View {
+    let total: Int64
+    let segments: [UsageSegment]?
+    let used: Int64
+
+    var body: some View {
         GeometryReader { geo in
-            let total = Double(max(monitor.disk.total, 1))
-            let shown = Array(scanner.folders.prefix(segmentCount))
+            let width = geo.size.width
+            let usedWidth = width * CGFloat(Double(used) / Double(max(total, 1)))
             ZStack(alignment: .leading) {
-                Capsule().fill(Theme.ink.opacity(0.06))
-                HStack(spacing: 2) {
-                    ForEach(Array(shown.enumerated()), id: \.element.id) { index, folder in
-                        Rectangle()
-                            .fill(color(index).gradient)
-                            .frame(width: max(3, geo.size.width * Double(folder.size) / total))
+                Rectangle().fill(Theme.track)
+                if let segments {
+                    let gaps = CGFloat(segments.count)
+                    HStack(spacing: 1) {
+                        ForEach(segments) { segment in
+                            Rectangle()
+                                .fill(segment.color)
+                                .frame(width: max(1, (usedWidth - gaps) * CGFloat(Double(segment.size) / Double(max(used, 1)))))
+                        }
                     }
+                } else {
+                    Rectangle().fill(Theme.graphite.opacity(0.45)).frame(width: usedWidth)
                 }
-                .clipShape(Capsule())
             }
         }
         .frame(height: 14)
-    }
-
-    private func color(_ index: Int) -> Color {
-        index < segmentCount ? Theme.palette[index] : Theme.ink.opacity(0.15)
+        .clipShape(Capsule())
+        .animation(.smooth(duration: 0.6), value: segments)
     }
 }
 
 private struct FolderRow: View {
     let folder: FolderUsage
-    let color: Color
+    let first: Bool
 
     var body: some View {
-        HStack(spacing: 14) {
-            Circle().fill(color).frame(width: 10, height: 10)
-            Image(nsImage: NSWorkspace.shared.icon(forFile: folder.url.path))
-                .resizable()
-                .frame(width: 22, height: 22)
+        HStack(spacing: 12) {
+            AppIconView(image: NSWorkspace.shared.icon(forFile: folder.url.path))
             Text(folder.name)
-                .font(Theme.rounded(15, .medium))
+                .font(Theme.body)
                 .foregroundStyle(Theme.ink)
                 .lineLimit(1)
-            Spacer()
+            Spacer(minLength: 16)
             Text(folder.size.bytes)
-                .font(Theme.number(13, .medium))
+                .font(Theme.digits)
                 .foregroundStyle(Theme.secondary)
             Button {
                 NSWorkspace.shared.activateFileViewerSelecting([folder.url])
             } label: {
-                Image(systemName: "arrow.up.forward.circle.fill")
-                    .font(.system(size: 15))
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Theme.tertiary)
             }
             .buttonStyle(.plain)
             .help("Show in Finder")
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .hoverLift()
+        .frame(maxHeight: .infinity)
+        .overlay(alignment: .top) {
+            if !first { Hairline().padding(.leading, 32) }
+        }
+        .hoverWash()
+    }
+}
+
+/// Lays items out left to right and wraps onto a new line when they run out of room.
+private struct FlowRow: Layout {
+    var spacing: CGFloat
+    var lineSpacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = arrange(width: proposal.width ?? .infinity, subviews: subviews)
+        let height = rows.map(\.height).reduce(0, +) + lineSpacing * CGFloat(max(rows.count - 1, 0))
+        return CGSize(width: proposal.width ?? rows.map(\.width).max() ?? 0, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in arrange(width: bounds.width, subviews: subviews) {
+            var x = bounds.minX
+            for index in row.indices {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(at: CGPoint(x: x, y: y + (row.height - size.height) / 2), proposal: .unspecified)
+                x += size.width + spacing
+            }
+            y += row.height + lineSpacing
+        }
+    }
+
+    private func arrange(width: CGFloat, subviews: Subviews) -> [(indices: [Int], width: CGFloat, height: CGFloat)] {
+        var rows: [(indices: [Int], width: CGFloat, height: CGFloat)] = []
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            if let last = rows.last, last.width + spacing + size.width <= width {
+                rows[rows.count - 1].indices.append(index)
+                rows[rows.count - 1].width += spacing + size.width
+                rows[rows.count - 1].height = max(last.height, size.height)
+            } else {
+                rows.append(([index], size.width, size.height))
+            }
+        }
+        return rows
     }
 }

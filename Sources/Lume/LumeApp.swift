@@ -10,10 +10,10 @@ struct LumeApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(monitor)
-                .frame(minWidth: 860, minHeight: 620)
+                .frame(minWidth: 960, minHeight: 680)
         }
         .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 980, height: 720)
+        .defaultSize(width: 1040, height: 720)
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .newItem) {}
@@ -23,7 +23,7 @@ struct LumeApp: App {
             MenuBarView()
                 .environmentObject(monitor)
         } label: {
-            Image(systemName: "gauge.with.dots.needle.33percent")
+            Image(nsImage: MenuBarIcon.image)
         }
         .menuBarExtraStyle(.window)
     }

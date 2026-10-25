@@ -30,37 +30,33 @@ struct RootView: View {
         ZStack(alignment: .bottom) {
             Backdrop()
 
+            // Every page is a fixed layout that fills the space between the title bar and the tab bar.
             ZStack {
                 page(sectionState.value)
                     .id(sectionState.value)
-                    .transition(.liftFade)
+                    .transition(.opacity)
             }
+            .frame(maxWidth: 1120, maxHeight: .infinity, alignment: .top)
+            .padding(.horizontal, Theme.margin)
+            .padding(.top, 48)
+            .padding(.bottom, 88)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             TabBar(selection: $sectionState.value, namespace: tabs)
-                .padding(.bottom, 22)
+                .padding(.bottom, 24)
         }
         .preferredColorScheme(.light)
-        .animation(.spring(response: 0.45, dampingFraction: 0.9), value: sectionState.value)
+        .animation(.easeInOut(duration: 0.22), value: sectionState.value)
     }
 
+    @ViewBuilder
     private func page(_ page: Page) -> some View {
-        ScrollView {
-            Group {
-                switch page {
-                case .overview: OverviewView(processes: processes, goTo: { sectionState.value = $0 })
-                case .clean: CleanView(cleaner: cleaner)
-                case .storage: StorageView(scanner: storage)
-                case .startup: StartupView(items: startup)
-                }
-            }
-            .frame(maxWidth: Theme.column)
-            .padding(.horizontal, Theme.gutter)
-            .padding(.top, 52)
-            .padding(.bottom, 120)
-            .frame(maxWidth: .infinity)
+        switch page {
+        case .overview: OverviewView(processes: processes, goTo: { sectionState.value = $0 })
+        case .clean: CleanView(cleaner: cleaner)
+        case .storage: StorageView(scanner: storage)
+        case .startup: StartupView(items: startup)
         }
-        .scrollIndicators(.never)
     }
 }
 
@@ -70,21 +66,24 @@ private struct TabBar: View {
     let namespace: Namespace.ID
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 4) {
             ForEach(Array(Page.allCases.enumerated()), id: \.element) { index, page in
                 let selected = selection == page
                 Button { selection = page } label: {
-                    HStack(spacing: 7) {
-                        Image(systemName: page.symbol).font(.system(size: 13, weight: .semibold))
-                        Text(page.rawValue).font(Theme.rounded(13, .semibold))
+                    HStack(spacing: 8) {
+                        Image(systemName: page.symbol)
+                            .symbolRenderingMode(.hierarchical)
+                            .font(.system(size: 13, weight: .medium))
+                            .frame(width: 18)
+                        Text(page.rawValue).font(.system(size: 13, weight: .medium))
                     }
-                    .foregroundStyle(selected ? Theme.accent : Theme.ink.opacity(0.72))
+                    .foregroundStyle(selected ? Theme.accent : Theme.secondary)
                     .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
+                    .frame(height: 36)
                     .background {
                         if selected {
                             Capsule()
-                                .fill(Theme.accent.opacity(0.14))
+                                .fill(Theme.accent.opacity(0.12))
                                 .matchedGeometryEffect(id: "selection", in: namespace)
                         }
                     }
@@ -94,9 +93,8 @@ private struct TabBar: View {
                 .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
             }
         }
-        .padding(6)
+        .padding(4)
         .glass(Capsule(), interactive: true)
-        .shadow(color: .black.opacity(0.08), radius: 22, y: 10)
-        .animation(.spring(response: 0.4, dampingFraction: 0.82), value: selection)
+                .animation(.spring(response: 0.4, dampingFraction: 0.82), value: selection)
     }
 }

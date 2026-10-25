@@ -6,43 +6,54 @@ struct StartupView: View {
     var body: some View {
         let user = items.items.filter(\.isUserScope)
         let system = items.items.filter { !$0.isUserScope }
+        let enabled = items.items.filter(\.isEnabled).count
 
-        VStack(alignment: .leading, spacing: 20) {
-            PageHeader(title: "Startup", subtitle: "Background helpers that launch when you log in.") {
-                Button("Login Items…") { items.openLoginItemsSettings() }
-                    .glassButton()
+        VStack(alignment: .leading, spacing: Theme.gap) {
+            PageHeader(title: "\(enabled) of \(items.items.count) helpers open at login.",
+                       subtitle: "Background agents that start when you log in. Turning one off moves its file aside.") {
+                Button { items.openLoginItemsSettings() } label: {
+                    Label("Login Items", systemImage: "gearshape")
+                }
+                .glassButton()
             }
 
-            group("Yours", note: "Turning one off moves its file aside. Turn it back on any time.", rows: user)
-            if !system.isEmpty {
-                group("System-wide", note: "Installed for all users. Managed in System Settings.", rows: system)
+            GlassPanel(fill: false) {
+                // The panel hugs its rows; only if they outgrow the window does the list scroll.
+                let list = VStack(alignment: .leading, spacing: 0) {
+                    section("Yours", rows: user)
+                    if !system.isEmpty {
+                        section("For all users", rows: system)
+                            .padding(.top, 16)
+                    }
+                }
+                ViewThatFits(in: .vertical) {
+                    list
+                    ScrollView { list }.quietScroll()
+                }
             }
+            .frame(maxHeight: .infinity, alignment: .top)
         }
         .animation(.smooth(duration: 0.4), value: items.items)
         .onAppear { items.reload() }
     }
 
-    private func group(_ title: String, note: String, rows: [StartupItem]) -> some View {
-        GlassSlab(padding: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(Theme.rounded(17, .semibold)).foregroundStyle(Theme.ink)
-                    Text(note).font(Theme.label).foregroundStyle(Theme.secondary)
-                }
-                .padding(.horizontal, 12)
-                .padding(.top, 8)
-                .padding(.bottom, 6)
+    @ViewBuilder
+    private func section(_ title: String, rows: [StartupItem]) -> some View {
+        Text(title)
+            .font(Theme.sectionTitle)
+            .foregroundStyle(Theme.ink)
+            .padding(.horizontal, 8)
+            .frame(height: 24)
 
-                if rows.isEmpty {
-                    Text("Nothing here. Nice and quiet.")
-                        .font(Theme.body)
-                        .foregroundStyle(Theme.secondary)
-                        .padding(12)
-                }
-                ForEach(rows) { item in
-                    StartupRow(item: item, items: items)
-                }
-            }
+        if rows.isEmpty {
+            Text("Nothing here.")
+                .font(Theme.body)
+                .foregroundStyle(Theme.secondary)
+                .padding(8)
+        }
+        ForEach(Array(rows.enumerated()), id: \.element.id) { index, item in
+            if index > 0 { Hairline().padding(.leading, 48) }
+            StartupRow(item: item, items: items)
         }
     }
 }
@@ -52,22 +63,25 @@ private struct StartupRow: View {
     @ObservedObject var items: StartupItems
 
     var body: some View {
-        HStack(spacing: 14) {
-            IconBadge(symbol: "gearshape", tint: item.isEnabled ? Theme.accent : Theme.ink.opacity(0.4))
+        HStack(spacing: 12) {
+            AppIconView(image: AppIcons.forPath(item.program), size: Theme.tileSize)
+                .saturation(item.isEnabled ? 1 : 0)
+                .opacity(item.isEnabled ? 1 : 0.6)
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.displayName.capitalized)
-                    .font(Theme.rounded(15, .medium))
-                    .foregroundStyle(Theme.ink)
+                    .font(Theme.body.weight(.medium))
+                    .foregroundStyle(item.isEnabled ? Theme.ink : Theme.secondary)
                     .lineLimit(1)
                 Text(item.label)
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Theme.secondary)
+                    .foregroundStyle(Theme.tertiary)
                     .lineLimit(1)
+                    .truncationMode(.middle)
             }
-            Spacer()
+            Spacer(minLength: 16)
             Button { items.reveal(item) } label: {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Theme.tertiary)
             }
             .buttonStyle(.plain)
@@ -79,20 +93,16 @@ private struct StartupRow: View {
                     set: { items.setEnabled(item, $0) }
                 ))
                 .toggleStyle(.switch)
+                .controlSize(.small)
                 .labelsHidden()
-                .tint(Theme.accent)
+                .tint(Theme.graphite)
             } else {
-                Text("System")
-                    .font(Theme.label)
-                    .foregroundStyle(Theme.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(Theme.ink.opacity(0.06)))
+                Text("Managed by System")
+                    .font(Theme.caption)
+                    .foregroundStyle(Theme.tertiary)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .opacity(item.isUserScope ? (item.isEnabled ? 1 : 0.6) : 0.6)
-        .hoverLift()
+        .frame(height: 52)
+        .hoverWash()
     }
 }

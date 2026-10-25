@@ -12,6 +12,13 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Lume"
 
+# App icon: render every size from scripts/make-icon.swift, then pack it with iconutil.
+mkdir -p .build/icon
+swiftc -O -o .build/icon/make-icon scripts/make-icon.swift
+rm -rf .build/icon/Lume.iconset
+.build/icon/make-icon .build/icon/Lume.iconset
+iconutil -c icns .build/icon/Lume.iconset -o "$APP/Contents/Resources/Lume.icns"
+
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -21,6 +28,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleDisplayName</key><string>Lume</string>
     <key>CFBundleIdentifier</key><string>app.lume.optimiser</string>
     <key>CFBundleExecutable</key><string>Lume</string>
+    <key>CFBundleIconFile</key><string>Lume</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>1.0</string>
     <key>CFBundleVersion</key><string>1</string>
