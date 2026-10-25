@@ -216,18 +216,20 @@ private struct FolderRow: View {
                 .font(Theme.digits)
                 .foregroundStyle(Theme.secondary)
             // Hidden files are many folders, not one, so there's nothing single to show.
-            if !folder.isHiddenGroup {
-                Button {
-                    NSWorkspace.shared.activateFileViewerSelecting([folder.url])
-                } label: {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Theme.tertiary)
-                }
-                .buttonStyle(.plain)
-                .help("Show in Finder")
-                .accessibilityLabel("Show \(folder.name) in Finder")
+            // The button keeps its place, so sizes stay in one column.
+            Button {
+                NSWorkspace.shared.activateFileViewerSelecting([folder.url])
+            } label: {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.tertiary)
             }
+            .buttonStyle(.plain)
+            .help("Show in Finder")
+            .accessibilityLabel("Show \(folder.name) in Finder")
+            .opacity(folder.isHiddenGroup ? 0 : 1)
+            .disabled(folder.isHiddenGroup)
+            .accessibilityHidden(folder.isHiddenGroup)
             Image(systemName: "chevron.right")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(Theme.tertiary)

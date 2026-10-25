@@ -33,7 +33,7 @@ struct JunkCategory: Identifiable, Hashable {
                          symbol: "cable.connector", url: developer.appending(path: "Xcode/iOS DeviceSupport"),
                          group: .developer),
             JunkCategory(id: "npm", name: "npm cache", detail: "Downloaded packages, fetched again on install",
-                         symbol: "shippingbox", url: home.appending(path: ".npm/_cacache"), group: .developer),
+                         symbol: "cube", url: home.appending(path: ".npm/_cacache"), group: .developer),
             JunkCategory(id: "archives", name: "Xcode archives", detail: "Old app builds; keep any you still need",
                          symbol: "archivebox", url: developer.appending(path: "Xcode/Archives"),
                          group: .developer, onByDefault: false),

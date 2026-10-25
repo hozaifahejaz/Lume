@@ -236,10 +236,7 @@ struct AppIconView: View {
                 .interpolation(.high)
                 .frame(width: size, height: size)
         } else {
-            Image(systemName: fallback)
-                .font(.system(size: size * 0.62, weight: .regular))
-                .foregroundStyle(Theme.tertiary)
-                .frame(width: size, height: size)
+            IconTile(symbol: fallback, size: size)
         }
     }
 }

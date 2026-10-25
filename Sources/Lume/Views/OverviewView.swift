@@ -15,7 +15,7 @@ struct OverviewView: View {
             }
 
             GlassPanel(fill: false) {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 16) {
                     HStack(spacing: 0) {
                         stat("Processor", monitor.cpu.percent,
                              ["\(ProcessInfo.processInfo.activeProcessorCount) cores", Self.coreKinds], monitor.cpu)
@@ -39,7 +39,7 @@ struct OverviewView: View {
                             Text(monitor.cpu.percent).font(Theme.digits).foregroundStyle(Theme.secondary)
                         }
                         Sparkline(values: monitor.cpuHistory)
-                            .frame(height: 32)
+                            .frame(height: 28)
                     }
                 }
             }
@@ -83,12 +83,12 @@ struct OverviewView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
                 .contentTransition(.numericText())
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 ForEach(captions.filter { !$0.isEmpty }, id: \.self) { caption in
                     Text(caption).font(Theme.caption).foregroundStyle(Theme.tertiary).lineLimit(1)
                 }
             }
-            HairBar(fraction: fraction, alert: high).padding(.top, 8)
+            HairBar(fraction: fraction, alert: high).padding(.top, 6)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
