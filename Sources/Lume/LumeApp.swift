@@ -6,6 +6,7 @@ struct LumeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var monitor: SystemMonitor
     @StateObject private var meter: MenuBarMeter
+    @StateObject private var navigator = Navigator()
 
     init() {
         let monitor = SystemMonitor()
@@ -18,6 +19,7 @@ struct LumeApp: App {
         Window("Lume", id: "main") {
             RootView()
                 .environmentObject(monitor)
+                .environmentObject(navigator)
                 .frame(minWidth: 960, minHeight: 680)
         }
         .windowStyle(.hiddenTitleBar)
@@ -25,7 +27,22 @@ struct LumeApp: App {
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .newItem) {}
+            CommandGroup(before: .toolbar) {
+                ForEach(Array(Page.allCases.enumerated()), id: \.element) { index, page in
+                    Button(page.rawValue) { navigator.show(page) }
+                        .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
+                }
+                Divider()
+                Button("Rescan") { navigator.rescan() }
+                    .keyboardShortcut("r", modifiers: .command)
+                Divider()
+            }
         }
+
+        Settings {
+            SettingsView()
+        }
+        .windowResizability(.contentSize)
 
         MenuBarExtra {
             MenuBarView()
@@ -70,13 +87,20 @@ enum MainWindow {
     }
 }
 
-/// The menu bar icon; it's always on screen, so it also captures the openWindow action at launch.
+/// The menu bar icon, optionally followed by the processor percentage. It's always on screen,
+/// so it also captures the openWindow action at launch.
 private struct MenuBarLabel: View {
     @ObservedObject var meter: MenuBarMeter
     @Environment(\.openWindow) private var openWindow
+    @AppStorage(MenuBarMeter.showsCPUKey) private var showsCPU = false
 
     var body: some View {
-        Image(nsImage: meter.image)
-            .onAppear { MainWindow.openAction = openWindow }
+        HStack(spacing: 4) {
+            Image(nsImage: meter.image)
+            if showsCPU {
+                Text(meter.cpuText).monospacedDigit()
+            }
+        }
+        .onAppear { MainWindow.openAction = openWindow }
     }
 }

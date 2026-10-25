@@ -18,8 +18,23 @@ enum Page: String, CaseIterable, Identifiable {
     }
 }
 
+/// The page on screen, shared with the View menu so ⌘1–4 and ⌘R work from the menu bar too.
+@MainActor
+final class Navigator: ObservableObject {
+    @Published var page: Page = .overview
+    /// Bumped by View › Rescan; the page on screen measures again.
+    @Published private(set) var rescans = 0
+
+    func show(_ page: Page) {
+        self.page = page
+        MainWindow.open()
+    }
+
+    func rescan() { rescans += 1 }
+}
+
 struct RootView: View {
-    @StateObject private var sectionState = ViewState<Page>(.overview)
+    @EnvironmentObject private var navigator: Navigator
     @StateObject private var cleaner = Cleaner()
     @StateObject private var storage = StorageScanner()
     @StateObject private var startup = StartupItems()
@@ -32,8 +47,8 @@ struct RootView: View {
 
             // Every page is a fixed layout that fills the space between the title bar and the tab bar.
             ZStack {
-                page(sectionState.value)
-                    .id(sectionState.value)
+                page(navigator.page)
+                    .id(navigator.page)
                     .transition(.opacity)
             }
             .frame(maxWidth: 1120, maxHeight: .infinity, alignment: .top)
@@ -42,17 +57,29 @@ struct RootView: View {
             .padding(.bottom, 88)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            TabBar(selection: $sectionState.value, namespace: tabs)
+            TabBar(selection: $navigator.page, namespace: tabs)
                 .padding(.bottom, 24)
         }
         .preferredColorScheme(.light)
-        .animation(.easeInOut(duration: 0.22), value: sectionState.value)
+        .animation(.easeInOut(duration: 0.22), value: navigator.page)
+        .onChange(of: navigator.rescans) { rescan() }
+    }
+
+    private func rescan() {
+        switch navigator.page {
+        case .overview: processes.refresh()
+        case .clean:
+            if cleaner.phase != .scanning && cleaner.phase != .cleaning { Task { await cleaner.scan() } }
+        case .storage:
+            if !storage.isScanning { Task { await storage.rescan() } }
+        case .startup: startup.reload()
+        }
     }
 
     @ViewBuilder
     private func page(_ page: Page) -> some View {
         switch page {
-        case .overview: OverviewView(processes: processes, goTo: { sectionState.value = $0 })
+        case .overview: OverviewView(processes: processes, goTo: { navigator.page = $0 })
         case .clean: CleanView(cleaner: cleaner)
         case .storage: StorageView(scanner: storage)
         case .startup: StartupView(items: startup)
@@ -67,7 +94,8 @@ private struct TabBar: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            ForEach(Array(Page.allCases.enumerated()), id: \.element) { index, page in
+            // ⌘1–4 live in the View menu.
+            ForEach(Page.allCases) { page in
                 let selected = selection == page
                 Button { selection = page } label: {
                     HStack(spacing: 8) {
@@ -90,11 +118,11 @@ private struct TabBar: View {
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
+                .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
         .padding(4)
         .glass(Capsule(), interactive: true)
-                .animation(.spring(response: 0.4, dampingFraction: 0.82), value: selection)
+        .animation(.spring(response: 0.4, dampingFraction: 0.82), value: selection)
     }
 }

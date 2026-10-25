@@ -159,7 +159,11 @@ enum MenuBarIcon {
 /// Redraws the menu bar meter every 2 seconds, and only when a value has moved by 3% or more.
 @MainActor
 final class MenuBarMeter: ObservableObject {
+    static let showsCPUKey = "menuBarShowsCPU"
+
     @Published private(set) var image = MenuBarIcon.image
+    /// Processor use for the optional text beside the icon, on the same 2-second beat.
+    @Published private(set) var cpuText = "0%"
     private var shown: [Double] = []
     private var timer: Timer?
 
@@ -176,6 +180,8 @@ final class MenuBarMeter: ObservableObject {
     }
 
     private func update(_ values: [Double]) {
+        let text = (values.first ?? 0).percent
+        if text != cpuText { cpuText = text }
         guard shown.isEmpty || zip(values, shown).contains(where: { abs($0 - $1) >= 0.03 }) else { return }
         shown = values
         image = MenuBarIcon.make(values: values)
