@@ -6,93 +6,104 @@ struct OverviewView: View {
     let goTo: (Page) -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 26) {
             ZStack {
-                LoadArcs(values: [monitor.cpu, monitor.memory.fraction, monitor.disk.fraction], diameter: 272)
-                Orb(load: monitor.load, size: 200)
-            }
-            .frame(height: 400)
-
-            Text(monitor.mood)
-                .font(Theme.serif(32))
-                .foregroundStyle(Theme.bone)
-                .contentTransition(.opacity)
+                Color.clear
+                    .frame(width: 330, height: 330)
+                    .glass(Circle())
+                RingGauge(
+                    values: [monitor.cpu, monitor.memory.fraction, monitor.disk.fraction],
+                    hues: [Theme.cpuHue, Theme.memoryHue, Theme.diskHue]
+                )
+                .frame(width: 286, height: 286)
+                VStack(spacing: 4) {
+                    Text(monitor.mood)
+                        .font(Theme.rounded(28, .semibold))
+                        .foregroundStyle(Theme.ink)
+                        .contentTransition(.opacity)
+                    Text(greeting).font(Theme.label).foregroundStyle(Theme.secondary)
+                }
                 .animation(.smooth, value: monitor.mood)
-                .padding(.top, 4)
-            Text("\(greeting) · arcs show processor, memory, disk")
-                .monoLabel(size: 9.5)
-                .padding(.top, 12)
-
-            HStack(spacing: 0) {
-                stat("Processor", "\(Int((monitor.cpu * 100).rounded()))%",
-                     "\(ProcessInfo.processInfo.activeProcessorCount) cores", monitor.cpu)
-                Rectangle().fill(Theme.hairline).frame(width: 0.5, height: 56)
-                stat("Memory", monitor.memory.used.bytes, "of \(monitor.memory.total.bytes)", monitor.memory.fraction)
-                Rectangle().fill(Theme.hairline).frame(width: 0.5, height: 56)
-                stat("Disk", monitor.disk.available.bytes, "free", monitor.disk.fraction)
             }
-            .padding(.top, 52)
+            .padding(.top, 4)
+
+            HStack(spacing: 14) {
+                chip("Processor", "\(Int((monitor.cpu * 100).rounded()))%",
+                     "\(ProcessInfo.processInfo.activeProcessorCount) cores", monitor.cpu, Theme.cpuHue)
+                chip("Memory", monitor.memory.used.bytes, "of \(monitor.memory.total.bytes)",
+                     monitor.memory.fraction, Theme.memoryHue)
+                chip("Disk", monitor.disk.available.bytes, "free", monitor.disk.fraction, Theme.diskHue)
+            }
 
             if monitor.disk.fraction > 0.8 {
-                Button("Disk is nearly full · Clean →") { goTo(.clean) }
-                    .buttonStyle(MonoButtonStyle())
-                    .padding(.top, 32)
+                Button { goTo(.clean) } label: {
+                    Label("Your disk is getting full. Free up space", systemImage: "sparkles")
+                }
+                .glassButton(prominent: true)
             }
 
-            activity.padding(.top, 72)
+            activity
         }
         .onAppear { processes.start() }
         .onDisappear { processes.stop() }
     }
 
-    private func stat(_ label: String, _ value: String, _ caption: String, _ fraction: Double) -> some View {
-        VStack(spacing: 8) {
-            Text(label).monoLabel()
+    private func chip(_ label: String, _ value: String, _ caption: String, _ fraction: Double, _ hue: Color) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Circle().fill(Theme.tint(for: fraction, base: hue)).frame(width: 8, height: 8)
+                Text(label).font(Theme.label).foregroundStyle(Theme.secondary)
+            }
             Text(value)
-                .font(Theme.serif(30).monospacedDigit())
-                .foregroundStyle(fraction > 0.85 ? Theme.coral : Theme.bone)
+                .font(Theme.number(30))
+                .foregroundStyle(Theme.ink)
                 .contentTransition(.numericText())
                 .animation(.smooth, value: value)
-            Text(caption).monoLabel(Theme.bone.opacity(0.3), size: 9)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(caption).font(Theme.label).foregroundStyle(Theme.tertiary)
         }
-        .frame(maxWidth: .infinity)
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glass(RoundedRectangle(cornerRadius: 22, style: .continuous), interactive: true)
     }
 
     private var activity: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Activity").monoLabel()
-                Spacer()
-                HStack(spacing: 18) {
-                    ForEach(ProcessList.Sort.allCases, id: \.self) { sort in
-                        Button(sort.rawValue) { processes.sort = sort }
-                            .buttonStyle(.plain)
-                            .monoLabel(processes.sort == sort ? Theme.amber : Theme.boneDim)
+        GlassSlab(padding: 18) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Text("Activity").font(Theme.rounded(17, .semibold)).foregroundStyle(Theme.ink)
+                    Spacer()
+                    Picker("", selection: $processes.sort) {
+                        ForEach(ProcessList.Sort.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(width: 150)
+                }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 10)
+
+                ForEach(processes.processes) { process in
+                    ProcessRow(process: process, sort: processes.sort, total: monitor.memory.total) {
+                        processes.quit(process)
                     }
                 }
-            }
-            .padding(.bottom, 14)
-            Hairline()
 
-            ForEach(processes.processes) { process in
-                ProcessRow(process: process, sort: processes.sort, total: monitor.memory.total) {
-                    processes.quit(process)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Processor, last minute").font(Theme.label).foregroundStyle(Theme.secondary)
+                        Spacer()
+                        Text("\(Int((monitor.cpu * 100).rounded()))%")
+                            .font(Theme.number(13, .medium))
+                            .foregroundStyle(Theme.ink)
+                    }
+                    Sparkline(values: monitor.cpuHistory, tint: Theme.tint(for: monitor.cpu))
+                        .frame(height: 44)
                 }
-                Hairline()
+                .padding(.horizontal, 8)
+                .padding(.top, 18)
             }
-
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text("Processor · last minute").monoLabel()
-                    Spacer()
-                    Text("\(Int((monitor.cpu * 100).rounded()))%")
-                        .font(Theme.mono(11))
-                        .foregroundStyle(Theme.bone)
-                }
-                GlowLine(values: monitor.cpuHistory, tint: Theme.tint(for: monitor.cpu))
-                    .frame(height: 56)
-            }
-            .padding(.top, 40)
         }
     }
 
@@ -110,32 +121,30 @@ private struct ProcessRow: View {
     let sort: ProcessList.Sort
     let total: UInt64
     let onQuit: () -> Void
-    @StateObject private var hoverState = ViewState(false)
 
     var body: some View {
-        HStack(spacing: 20) {
+        HStack(spacing: 16) {
             Text(process.name)
                 .font(Theme.body)
-                .foregroundStyle(Theme.bone.opacity(hoverState.value ? 1 : 0.85))
+                .foregroundStyle(Theme.ink)
                 .lineLimit(1)
-                .frame(width: 220, alignment: .leading)
-            HairlineBar(fraction: fraction, tint: Theme.amber.opacity(0.85))
+                .frame(width: 210, alignment: .leading)
+            SlimBar(fraction: fraction, tint: sort == .memory ? Theme.memoryHue : Theme.cpuHue)
             Text(value)
-                .font(Theme.mono(11))
-                .foregroundStyle(Theme.boneDim)
+                .font(Theme.number(12, .medium))
+                .foregroundStyle(Theme.secondary)
                 .frame(width: 76, alignment: .trailing)
             Button(action: onQuit) {
-                Text("Quit").monoLabel(Theme.coral, size: 9.5)
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.tertiary)
             }
             .buttonStyle(.plain)
             .help("Quit \(process.name)")
-            .frame(width: 44)
-            .opacity(hoverState.value ? 1 : 0)
         }
-        .padding(.vertical, 11)
-        .contentShape(Rectangle())
-        .onHover { hoverState.value = $0 }
-        .animation(.smooth(duration: 0.2), value: hoverState.value)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 8)
+        .hoverLift()
     }
 
     private var fraction: Double {

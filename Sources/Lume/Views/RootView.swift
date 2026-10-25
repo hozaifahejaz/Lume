@@ -7,10 +7,18 @@ enum Page: String, CaseIterable, Identifiable {
     case startup = "Startup"
 
     var id: String { rawValue }
+
+    var symbol: String {
+        switch self {
+        case .overview: return "gauge.with.dots.needle.33percent"
+        case .clean: return "sparkles"
+        case .storage: return "internaldrive"
+        case .startup: return "power"
+        }
+    }
 }
 
 struct RootView: View {
-    @EnvironmentObject private var monitor: SystemMonitor
     @StateObject private var sectionState = ViewState<Page>(.overview)
     @StateObject private var cleaner = Cleaner()
     @StateObject private var storage = StorageScanner()
@@ -20,25 +28,20 @@ struct RootView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            Backdrop(glow: Theme.tint(for: monitor.load), intensity: 0.6 + 0.8 * monitor.load)
+            Backdrop()
 
             ZStack {
                 page(sectionState.value)
                     .id(sectionState.value)
-                    .transition(.blurFade)
+                    .transition(.liftFade)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // Content dissolves into the ink before it reaches the floating tab bar.
-            LinearGradient(colors: [Theme.ink.opacity(0), Theme.ink.opacity(0.92)], startPoint: .top, endPoint: .bottom)
-                .frame(height: 120)
-                .allowsHitTesting(false)
-
             TabBar(selection: $sectionState.value, namespace: tabs)
-                .padding(.bottom, 24)
+                .padding(.bottom, 22)
         }
-        .preferredColorScheme(.dark)
-        .animation(.smooth(duration: 0.45), value: sectionState.value)
+        .preferredColorScheme(.light)
+        .animation(.spring(response: 0.45, dampingFraction: 0.9), value: sectionState.value)
     }
 
     private func page(_ page: Page) -> some View {
@@ -53,15 +56,15 @@ struct RootView: View {
             }
             .frame(maxWidth: Theme.column)
             .padding(.horizontal, Theme.gutter)
-            .padding(.top, 64)
-            .padding(.bottom, 130)
+            .padding(.top, 52)
+            .padding(.bottom, 120)
             .frame(maxWidth: .infinity)
         }
         .scrollIndicators(.never)
     }
 }
 
-/// A floating glass pill with mono words and a glowing dot under the active one.
+/// A floating glass capsule; the selected tab carries a tinted highlight that glides between tabs.
 private struct TabBar: View {
     @Binding var selection: Page
     let namespace: Namespace.ID
@@ -69,35 +72,31 @@ private struct TabBar: View {
     var body: some View {
         HStack(spacing: 2) {
             ForEach(Array(Page.allCases.enumerated()), id: \.element) { index, page in
+                let selected = selection == page
                 Button { selection = page } label: {
-                    VStack(spacing: 7) {
-                        Text(page.rawValue)
-                            .monoLabel(selection == page ? Theme.bone : Theme.boneDim, size: 10.5)
-                        ZStack {
-                            if selection == page {
-                                Circle()
-                                    .fill(Theme.amber)
-                                    .frame(width: 4, height: 4)
-                                    .shadow(color: Theme.amber, radius: 4)
-                                    .shadow(color: Theme.amber.opacity(0.6), radius: 10)
-                                    .matchedGeometryEffect(id: "dot", in: namespace)
-                            }
-                        }
-                        .frame(height: 4)
+                    HStack(spacing: 7) {
+                        Image(systemName: page.symbol).font(.system(size: 13, weight: .semibold))
+                        Text(page.rawValue).font(Theme.rounded(13, .semibold))
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 13)
-                    .padding(.bottom, 9)
-                    .contentShape(Rectangle())
+                    .foregroundStyle(selected ? Theme.accent : Theme.ink.opacity(0.72))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background {
+                        if selected {
+                            Capsule()
+                                .fill(Theme.accent.opacity(0.14))
+                                .matchedGeometryEffect(id: "selection", in: namespace)
+                        }
+                    }
+                    .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
             }
         }
-        .padding(.horizontal, 8)
-        .background(Capsule().fill(.ultraThinMaterial))
-        .overlay(Capsule().strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.55), radius: 30, y: 12)
-        .animation(.smooth(duration: 0.4), value: selection)
+        .padding(6)
+        .glass(Capsule(), interactive: true)
+        .shadow(color: .black.opacity(0.08), radius: 22, y: 10)
+        .animation(.spring(response: 0.4, dampingFraction: 0.82), value: selection)
     }
 }
