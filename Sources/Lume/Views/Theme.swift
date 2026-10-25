@@ -55,11 +55,6 @@ enum Theme {
 
     /// True once the percentage a person would read is above 85.
     static func isHigh(_ fraction: Double) -> Bool { (fraction * 100).rounded() > 85 }
-
-    /// Graphite normally; a muted red once a value passes 85%.
-    static func level(_ fraction: Double) -> Color {
-        isHigh(fraction) ? alert : graphite
-    }
 }
 
 // MARK: Glass
@@ -244,15 +239,16 @@ struct AppIconView: View {
     }
 }
 
-/// A 3pt capsule bar: graphite on a faint track, red past 85%.
+/// A 3pt capsule bar: graphite on a faint track, red past 85% (or when `alert` says so).
 struct HairBar: View {
     let fraction: Double
+    var alert: Bool? = nil
 
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule().fill(Theme.track)
-                Capsule().fill(Theme.level(fraction).opacity(0.7))
+                Capsule().fill(((alert ?? Theme.isHigh(fraction)) ? Theme.alert : Theme.graphite).opacity(0.7))
                     .frame(width: max(3, geo.size.width * min(max(fraction, 0), 1)))
             }
         }
@@ -273,14 +269,30 @@ struct Hairline: View {
 }
 
 extension SystemMonitor {
-    var load: Double { max(cpu, memory.fraction, disk.fraction) }
+    enum Load: Int, Comparable {
+        case smooth, busy, heavy
+        static func < (a: Load, b: Load) -> Bool { a.rawValue < b.rawValue }
+    }
+
+    /// How hard the Mac is working, from the processor and memory pressure only.
+    /// A full disk or a high memory figure on its own doesn't slow anything down.
+    var load: Load {
+        let processor: Load = cpu < 0.7 ? .smooth : cpu < 0.85 ? .busy : .heavy
+        let memory: Load = pressure == .normal ? .smooth : pressure == .warning ? .busy : .heavy
+        return max(processor, memory)
+    }
 
     var mood: String {
         switch load {
-        case ..<0.7: return "Running smoothly"
-        case ..<0.85: return "Busy"
-        default: return "Under heavy load"
+        case .smooth: return "Running smoothly"
+        case .busy: return "Busy"
+        case .heavy: return "Under heavy load"
         }
+    }
+
+    /// Under 10% free: the one point where disk space starts to matter for speed.
+    var diskNearlyFull: Bool {
+        disk.total > 0 && Double(disk.available) / Double(disk.total) < 0.1
     }
 }
 

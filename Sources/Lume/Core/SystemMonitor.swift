@@ -1,12 +1,13 @@
 import Foundation
 import Darwin
 
-/// Samples CPU and memory once a second using Mach APIs; disk space every 30 seconds, off the main actor.
+/// Samples CPU, memory and memory pressure once a second using Mach APIs; disk space every 30 seconds, off the main actor.
 @MainActor
 final class SystemMonitor: ObservableObject {
     @Published private(set) var cpu: Double = 0
     @Published private(set) var cpuHistory: [Double] = Array(repeating: 0, count: 60)
     @Published private(set) var memory = MemoryStats()
+    @Published private(set) var pressure: Pressure = .normal
     @Published private(set) var disk = DiskStats()
 
     private var timer: Timer?
@@ -52,6 +53,7 @@ final class SystemMonitor: ObservableObject {
         }
         previousTicks = ticks
         memory = Self.readMemory()
+        pressure = Self.readPressure()
     }
 
     // MARK: CPU
@@ -112,6 +114,27 @@ final class SystemMonitor: ObservableObject {
         out.compressed = UInt64(stats.compressor_page_count) * page
         out.used = out.app + out.wired + out.compressed
         return out
+    }
+
+    /// The kernel's own verdict on memory, the same signal Activity Monitor's pressure graph uses.
+    /// A full-looking memory number is normal on macOS; pressure is what says whether it hurts.
+    enum Pressure: Int {
+        case normal = 1, warning = 2, critical = 4
+
+        var word: String {
+            switch self {
+            case .normal: return "normal"
+            case .warning: return "elevated"
+            case .critical: return "high"
+            }
+        }
+    }
+
+    private static func readPressure() -> Pressure {
+        var level: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        guard sysctlbyname("kern.memorystatus_vm_pressure_level", &level, &size, nil, 0) == 0 else { return .normal }
+        return Pressure(rawValue: Int(level)) ?? .normal
     }
 
     // MARK: Disk

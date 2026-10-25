@@ -8,7 +8,7 @@ struct OverviewView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.gap) {
             PageHeader(title: headline, subtitle: detail) {
-                if Theme.isHigh(monitor.disk.fraction) {
+                if monitor.diskNearlyFull {
                     Button("Free Up Space…") { goTo(.clean) }
                         .glassButton()
                 }
@@ -18,12 +18,14 @@ struct OverviewView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     HStack(spacing: 0) {
                         stat("Processor", monitor.cpu.percent,
-                             "\(ProcessInfo.processInfo.activeProcessorCount) cores", monitor.cpu)
+                             ["\(ProcessInfo.processInfo.activeProcessorCount) cores", Self.coreKinds], monitor.cpu)
                         Hairline(vertical: true).padding(.horizontal, 20)
-                        stat("Memory", monitor.memory.used.bytes, "of \(monitor.memory.total.bytes)",
-                             monitor.memory.fraction)
+                        stat("Memory", monitor.memory.used.bytes,
+                             ["of \(monitor.memory.total.bytes)", "Pressure \(monitor.pressure.word)"],
+                             monitor.memory.fraction, alert: monitor.pressure == .critical)
                         Hairline(vertical: true).padding(.horizontal, 20)
-                        stat("Disk", monitor.disk.available.bytes, "available of \(monitor.disk.total.bytes)",
+                        stat("Disk", monitor.disk.used.bytes,
+                             ["of \(monitor.disk.total.bytes)", "\(monitor.disk.available.bytes) available"],
                              monitor.disk.fraction)
                     }
                     .fixedSize(horizontal: false, vertical: true)
@@ -68,40 +70,71 @@ struct OverviewView: View {
         .onDisappear { processes.stop() }
     }
 
-    private func stat(_ label: String, _ value: String, _ caption: String, _ fraction: Double) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+    /// `alert` turns the number red; by default that happens past 85%. Memory passes it in,
+    /// because a nearly full memory figure is normal on macOS and only high pressure is a problem.
+    private func stat(_ label: String, _ value: String, _ captions: [String], _ fraction: Double,
+                      alert: Bool? = nil) -> some View {
+        let high = alert ?? Theme.isHigh(fraction)
+        return VStack(alignment: .leading, spacing: 4) {
             Text(label).font(Theme.caption).foregroundStyle(Theme.secondary)
             Text(value)
                 .font(Theme.number)
-                .foregroundStyle(Theme.isHigh(fraction) ? Theme.alert : Theme.ink)
+                .foregroundStyle(high ? Theme.alert : Theme.ink)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-            Text(caption).font(Theme.caption).foregroundStyle(Theme.tertiary).lineLimit(1)
-            HairBar(fraction: fraction).padding(.top, 8)
+                .contentTransition(.numericText())
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(captions.filter { !$0.isEmpty }, id: \.self) { caption in
+                    Text(caption).font(Theme.caption).foregroundStyle(Theme.tertiary).lineLimit(1)
+                }
+            }
+            HairBar(fraction: fraction, alert: high).padding(.top, 8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var resources: [(name: String, value: Double)] {
-        [("Processor", monitor.cpu), ("Memory", monitor.memory.fraction), ("Disk", monitor.disk.fraction)]
-    }
+    /// "4 performance · 6 efficiency" on Apple silicon; empty where the split isn't reported.
+    private static let coreKinds: String = {
+        func int(_ name: String) -> Int {
+            var value: Int32 = 0
+            var size = MemoryLayout<Int32>.size
+            return sysctlbyname(name, &value, &size, nil, 0) == 0 ? Int(value) : 0
+        }
+        func string(_ name: String) -> String {
+            var size = 0
+            guard sysctlbyname(name, nil, &size, nil, 0) == 0, size > 0 else { return "" }
+            var buffer = [CChar](repeating: 0, count: size)
+            guard sysctlbyname(name, &buffer, &size, nil, 0) == 0 else { return "" }
+            return String(cString: buffer)
+        }
+        let levels = int("hw.nperflevels")
+        guard levels > 1 else { return "" }
+        return (0..<levels).compactMap { level -> String? in
+            let count = int("hw.perflevel\(level).physicalcpu")
+            let name = string("hw.perflevel\(level).name").lowercased()
+            return count > 0 && !name.isEmpty ? "\(count) \(name)" : nil
+        }.joined(separator: " · ")
+    }()
 
     private var headline: String {
         switch monitor.load {
-        case ..<0.7: return "Your Mac is running smoothly."
-        case ..<0.85: return "Your Mac is busy."
-        default: return "Your Mac is under heavy load."
+        case .smooth: return "Your Mac is running smoothly."
+        case .busy: return "Your Mac is busy."
+        case .heavy: return "Your Mac is under heavy load."
         }
     }
 
     private var detail: String {
-        let busy = resources.filter { $0.value >= 0.7 }.sorted { $0.value > $1.value }
-        guard !busy.isEmpty else { return "Processor, memory and disk all have plenty of headroom." }
-        let parts = busy.enumerated().map { index, resource in
-            "\(index == 0 ? resource.name : resource.name.lowercased()) at \(resource.value.percent)"
+        var parts: [String] = []
+        if monitor.cpu >= 0.7 { parts.append("The processor is busy at \(monitor.cpu.percent).") }
+        switch monitor.pressure {
+        case .normal: break
+        case .warning: parts.append("Memory pressure is elevated.")
+        case .critical: parts.append("Memory pressure is high.")
         }
-        let rest = busy.count < resources.count ? " Everything else is fine." : ""
-        return parts.joined(separator: " and ") + "." + rest
+        if parts.isEmpty { parts.append("Processor and memory have plenty of headroom.") }
+        if monitor.diskNearlyFull { parts.append("Disk is nearly full.") }
+        return parts.joined(separator: " ")
     }
 }
 

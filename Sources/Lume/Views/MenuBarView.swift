@@ -16,7 +16,8 @@ struct MenuBarView: View {
             HStack(spacing: 0) {
                 stat("Processor", monitor.cpu.percent, monitor.cpu)
                 Hairline(vertical: true).padding(.horizontal, 12)
-                stat("Memory", monitor.memory.fraction.percent, monitor.memory.fraction)
+                stat("Memory", monitor.memory.fraction.percent, monitor.memory.fraction,
+                     alert: monitor.pressure == .critical)
                 Hairline(vertical: true).padding(.horizontal, 12)
                 stat("Disk", monitor.disk.fraction.percent, monitor.disk.fraction)
             }
@@ -39,13 +40,14 @@ struct MenuBarView: View {
         .preferredColorScheme(.light)
     }
 
-    private func stat(_ label: String, _ value: String, _ fraction: Double) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+    private func stat(_ label: String, _ value: String, _ fraction: Double, alert: Bool? = nil) -> some View {
+        let high = alert ?? Theme.isHigh(fraction)
+        return VStack(alignment: .leading, spacing: 4) {
             Text(label).font(Theme.caption).foregroundStyle(Theme.secondary)
             Text(value)
                 .font(.system(size: 24, weight: .light, design: .rounded).monospacedDigit())
-                .foregroundStyle(Theme.isHigh(fraction) ? Theme.alert : Theme.ink)
-            HairBar(fraction: fraction).padding(.top, 4)
+                .foregroundStyle(high ? Theme.alert : Theme.ink)
+            HairBar(fraction: fraction, alert: high).padding(.top, 4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
