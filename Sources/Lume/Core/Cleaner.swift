@@ -42,15 +42,18 @@ struct JunkCategory: Identifiable, Hashable {
 }
 
 enum DiskSize {
+    private static let keys: [URLResourceKey] = [.totalFileAllocatedSizeKey, .fileAllocatedSizeKey, .isRegularFileKey]
+    private static let keySet = Set(keys)
+
     /// Total allocated size of everything under `url`. Unreadable items are skipped.
+    /// The enumerator prefetches these keys, so reading them back is a cache lookup.
     static func of(_ url: URL) -> Int64 {
-        let keys: [URLResourceKey] = [.totalFileAllocatedSizeKey, .fileAllocatedSizeKey, .isRegularFileKey]
         guard let enumerator = FileManager.default.enumerator(
             at: url, includingPropertiesForKeys: keys, options: [], errorHandler: { _, _ in true }
         ) else { return 0 }
         var total: Int64 = 0
         for case let item as URL in enumerator {
-            guard let values = try? item.resourceValues(forKeys: Set(keys)), values.isRegularFile == true else { continue }
+            guard let values = try? item.resourceValues(forKeys: keySet), values.isRegularFile == true else { continue }
             total += Int64(values.totalFileAllocatedSize ?? values.fileAllocatedSize ?? 0)
         }
         return total

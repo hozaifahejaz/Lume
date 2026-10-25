@@ -37,11 +37,12 @@ final class StorageScanner: ObservableObject {
         folders = []
         childCache = [:]
 
-        let fm = FileManager.default
-        let home = fm.homeDirectoryForCurrentUser
-        let children = (try? fm.contentsOfDirectory(
-            at: home, includingPropertiesForKeys: [.isDirectoryKey], options: []
-        ))?.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true } ?? []
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let children = await Task.detached {
+            (try? FileManager.default.contentsOfDirectory(
+                at: home, includingPropertiesForKeys: [.isDirectoryKey], options: []
+            ))?.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true } ?? []
+        }.value
         var targets = children.filter { !$0.lastPathComponent.hasPrefix(".") }
         targets.append(URL(fileURLWithPath: "/Applications"))
         let hidden = children.filter { $0.lastPathComponent.hasPrefix(".") }
@@ -117,9 +118,11 @@ final class StorageScanner: ObservableObject {
         isScanning = true
         progress = 0
         let url = folder.url
-        let items = (try? FileManager.default.contentsOfDirectory(
-            at: url, includingPropertiesForKeys: [.isDirectoryKey, .isPackageKey], options: []
-        )) ?? []
+        let items = await Task.detached {
+            (try? FileManager.default.contentsOfDirectory(
+                at: url, includingPropertiesForKeys: [.isDirectoryKey, .isPackageKey], options: []
+            )) ?? []
+        }.value
         let total = Double(max(items.count, 1))
         var done = 0.0
         var measured: [FolderUsage] = []

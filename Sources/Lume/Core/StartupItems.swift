@@ -33,28 +33,42 @@ final class StartupItems: ObservableObject {
     /// Labels an app turned back on behind Lume's back, with who did it, kept for this session.
     private var reenabled: [String: String] = [:]
 
+    private var reloadTask: Task<Void, Never>?
+
     private let fm = FileManager.default
     private var userAgents: URL { fm.homeDirectoryForCurrentUser.appending(path: "Library/LaunchAgents") }
     private var userDisabled: URL { fm.homeDirectoryForCurrentUser.appending(path: "Library/LaunchAgents (Disabled by Lume)") }
     private let systemAgents = URL(fileURLWithPath: "/Library/LaunchAgents")
 
+    /// Reads the three folders off the main actor; the list on screen stays until the new one is ready.
     func reload() {
-        var live = read(userAgents, user: true, enabled: true)
-        var paused = read(userDisabled, user: true, enabled: false)
+        reloadTask?.cancel()
+        let folders = (live: userAgents, paused: userDisabled, system: systemAgents)
+        reloadTask = Task {
+            let found = await Task.detached(priority: .userInitiated) {
+                (live: Self.read(folders.live, user: true, enabled: true),
+                 paused: Self.read(folders.paused, user: true, enabled: false),
+                 system: Self.read(folders.system, user: false, enabled: true))
+            }.value
+            guard !Task.isCancelled else { return }
+            var live = found.live
+            var paused = found.paused
 
-        // An app that reinstalled a helper the user paused: the live copy wins, the stale paused one goes.
-        let liveLabels = Set(live.map(\.label))
-        for stale in paused where liveLabels.contains(stale.label) {
-            try? fm.removeItem(at: stale.url)
-            reenabled[stale.label] = stale.appName ?? stale.displayName
-        }
-        paused.removeAll { liveLabels.contains($0.label) }
-        for index in live.indices {
-            live[index].reenabledBy = reenabled[live[index].label]
-        }
+            // An app that reinstalled a helper the user paused: the live copy wins, the stale paused one goes.
+            let liveLabels = Set(live.map(\.label))
+            for stale in paused where liveLabels.contains(stale.label) {
+                try? fm.removeItem(at: stale.url)
+                reenabled[stale.label] = stale.appName ?? stale.displayName
+            }
+            paused.removeAll { liveLabels.contains($0.label) }
+            for index in live.indices {
+                live[index].reenabledBy = reenabled[live[index].label]
+            }
 
-        let result = live + paused + read(systemAgents, user: false, enabled: true)
-        items = result.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+            let result = (live + paused + found.system)
+                .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+            if result != items { items = result }
+        }
     }
 
     func setEnabled(_ item: StartupItem, _ enabled: Bool) {
@@ -108,8 +122,8 @@ final class StartupItems: ObservableObject {
         }
     }
 
-    private func read(_ folder: URL, user: Bool, enabled: Bool) -> [StartupItem] {
-        guard let files = try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) else { return [] }
+    nonisolated private static func read(_ folder: URL, user: Bool, enabled: Bool) -> [StartupItem] {
+        guard let files = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) else { return [] }
         return files.filter { $0.pathExtension == "plist" }.compactMap { url in
             guard let dict = NSDictionary(contentsOf: url) as? [String: Any] else { return nil }
             let label = dict["Label"] as? String ?? url.deletingPathExtension().lastPathComponent
@@ -122,7 +136,7 @@ final class StartupItems: ObservableObject {
     }
 
     /// CFBundleDisplayName or CFBundleName of the outermost .app containing `program`.
-    private static func appName(for program: String) -> String? {
+    nonisolated private static func appName(for program: String) -> String? {
         let parts = program.split(separator: "/", omittingEmptySubsequences: false)
         guard let index = parts.firstIndex(where: { $0.hasSuffix(".app") }),
               let bundle = Bundle(path: parts[...index].joined(separator: "/")) else { return nil }

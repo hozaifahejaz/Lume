@@ -56,11 +56,18 @@ final class ProcessList: ObservableObject {
         refreshTask?.cancel()
         generation += 1
         let current = generation
+        let regularApps = Self.regularApps()
+        let previous = Previous(cpuTimes: previousCPUTime, time: previousSampleTime)
         refreshTask = Task {
-            let sample = await Task.detached { Self.readSample() }.value
+            // Listing, measuring and grouping a few hundred processes all happens off the main actor.
+            let grouped = await Task.detached(priority: .utility) {
+                Self.group(Self.readSample(), regularApps: regularApps, previous: previous)
+            }.value
             // A slower, older refresh must never overwrite a newer one.
             guard !Task.isCancelled, current == generation else { return }
-            raw = group(sample)
+            raw = grouped.rows
+            previousCPUTime = grouped.previous.cpuTimes
+            previousSampleTime = grouped.previous.time
             apply()
         }
     }
@@ -81,18 +88,28 @@ final class ProcessList: ObservableObject {
 
     private func apply() {
         let sorted = raw.sorted { sort == .memory ? $0.memory > $1.memory : $0.cpu > $1.cpu }
-        processes = Array(sorted.prefix(12))
+        let top = Array(sorted.prefix(12))
+        if top != processes { processes = top }
     }
 
-    /// Turns per-process samples into rows, summing helpers under the app bundle they live in.
-    private func group(_ sample: Sample) -> [ProcessUsage] {
-        let elapsed = previousSampleTime > 0 ? Double(sample.time &- previousSampleTime) : 0
-        var cpuTimes: [Int32: UInt64] = [:]
-
-        var regularApps: [String: Int32] = [:]
+    /// Bundle path to pid for every app with a Dock icon: the ones that can be quit.
+    private static func regularApps() -> [String: Int32] {
+        var apps: [String: Int32] = [:]
         for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
-            if let path = app.bundleURL?.path { regularApps[path] = app.processIdentifier }
+            if let path = app.bundleURL?.path { apps[path] = app.processIdentifier }
         }
+        return apps
+    }
+
+    /// CPU time per pid at the last sample, to turn the next one into a rate.
+    struct Previous: Sendable { var cpuTimes: [Int32: UInt64]; var time: UInt64 }
+
+    /// Turns per-process samples into rows, summing helpers under the app bundle they live in.
+    nonisolated private static func group(_ sample: Sample, regularApps: [String: Int32], previous: Previous)
+        -> (rows: [ProcessUsage], previous: Previous) {
+        let previousCPUTime = previous.cpuTimes
+        let elapsed = previous.time > 0 ? Double(sample.time &- previous.time) : 0
+        var cpuTimes: [Int32: UInt64] = [:]
 
         struct Bucket {
             var pid: Int32; var name: String; var memory: Int64 = 0; var cpu: Double = 0; var appPath: String?; var path: String
@@ -107,7 +124,7 @@ final class ProcessList: ObservableObject {
                     cpu = Double(time - before) / elapsed * 100
                 }
             }
-            let appPath = Self.outermostApp(in: row.path)
+            let appPath = outermostApp(in: row.path)
             let key = appPath ?? "pid:\(row.pid)"
             var bucket = buckets[key] ?? Bucket(
                 pid: row.pid,
@@ -125,13 +142,11 @@ final class ProcessList: ObservableObject {
             buckets[key] = bucket
         }
 
-        previousCPUTime = cpuTimes
-        previousSampleTime = sample.time
-
-        return buckets.values.map { bucket in
+        let rows = buckets.values.map { bucket in
             ProcessUsage(id: bucket.pid, name: bucket.name, memory: bucket.memory, cpu: bucket.cpu,
                          appPath: bucket.appPath, path: bucket.path, quitPID: bucket.appPath.flatMap { regularApps[$0] })
         }
+        return (rows, Previous(cpuTimes: cpuTimes, time: sample.time))
     }
 
     nonisolated private static func outermostApp(in path: String) -> String? {
