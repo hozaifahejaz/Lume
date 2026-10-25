@@ -98,7 +98,12 @@ private struct MenuBarLabel: View {
         HStack(spacing: 4) {
             Image(nsImage: meter.image)
             if showsCPU {
-                Text(meter.cpuText).monospacedDigit()
+                // A fixed two-digit width, so neighbouring menu bar items don't shift as the value changes.
+                ZStack(alignment: .trailing) {
+                    Text("88%").hidden()
+                    Text(meter.cpuText)
+                }
+                .monospacedDigit()
             }
         }
         .onAppear { MainWindow.openAction = openWindow }

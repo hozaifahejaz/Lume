@@ -26,7 +26,7 @@ struct MenuBarView: View {
             .glass(RoundedRectangle(cornerRadius: 16, style: .continuous))
             HStack {
                 Button("Quit Lume") { NSApp.terminate(nil) }
-                    .glassButton()
+                    .buttonStyle(PanelButtonStyle())
                 Spacer()
                 Button("Open Lume") {
                     MainWindow.openAction = openWindow
@@ -34,7 +34,7 @@ struct MenuBarView: View {
                     NSApp.keyWindow?.close()
                     MainWindow.open()
                 }
-                .glassButton(prominent: true)
+                .buttonStyle(PanelButtonStyle(prominent: true))
             }
         }
         .padding(16)
@@ -52,5 +52,23 @@ struct MenuBarView: View {
             HairBar(fraction: fraction, alert: high).padding(.top, 4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// The panel opens while Lume is usually in the background, where standard buttons draw in their
+/// inactive state and look disabled. These capsules look the same whether or not Lume is frontmost.
+private struct PanelButtonStyle: ButtonStyle {
+    var prominent = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(prominent ? Color.white : Theme.ink)
+            .padding(.horizontal, 14)
+            .frame(height: 28)
+            .background(Capsule().fill(prominent ? Theme.accent : Color.black.opacity(0.06)))
+            .overlay(Capsule().strokeBorder(Color.white.opacity(prominent ? 0.25 : 0.6), lineWidth: 0.5))
+            .opacity(configuration.isPressed ? 0.75 : 1)
+            .contentShape(Capsule())
     }
 }
