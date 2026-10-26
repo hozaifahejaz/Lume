@@ -113,6 +113,12 @@ struct RootView: View {
         .animation(.easeInOut(duration: 0.22), value: navigator.page)
         .animation(.easeOut(duration: 0.15), value: navigator.commandBarOpen)
         .onChange(of: navigator.rescans) { rescan() }
+        // A closed window is kept alive; it shouldn't come back with the command bar still open.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { note in
+            if (note.object as? NSWindow)?.identifier?.rawValue.hasPrefix("main") == true {
+                navigator.commandBarOpen = false
+            }
+        }
     }
 
     /// Every tab, then the actions.
