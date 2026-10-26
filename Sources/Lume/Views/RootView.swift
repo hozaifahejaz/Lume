@@ -5,6 +5,7 @@ enum Page: String, CaseIterable, Identifiable {
     case memory = "Memory"
     case clean = "Clean"
     case storage = "Storage"
+    case apps = "Apps"
     case startup = "Startup"
 
     var id: String { rawValue }
@@ -15,12 +16,13 @@ enum Page: String, CaseIterable, Identifiable {
         case .memory: return "memorychip"
         case .clean: return "sparkles"
         case .storage: return "internaldrive"
+        case .apps: return "square.grid.2x2"
         case .startup: return "power"
         }
     }
 }
 
-/// The page on screen, shared with the View menu so ⌘1–4 and ⌘R work from the menu bar too.
+/// The page on screen, shared with the View menu so ⌘1–6 and ⌘R work from the menu bar too.
 @MainActor
 final class Navigator: ObservableObject {
     @Published var page: Page = .overview
@@ -53,6 +55,7 @@ struct RootView: View {
     @StateObject private var memoryApps = ProcessList(appsOnly: true)
     @StateObject private var largeFiles = FileSweep(kind: .largeOld)
     @StateObject private var downloads = FileSweep(kind: .oldDownloads)
+    @StateObject private var leftovers = Leftovers()
     @StateObject private var storageMode = ViewState(StorageMode.folders)
     @Namespace private var tabs
     @Environment(\.openSettings) private var openSettings
@@ -143,6 +146,7 @@ struct RootView: View {
             case .largeFiles: Task { await largeFiles.scan() }
             case .downloads: Task { await downloads.scan() }
             }
+        case .apps: Task { await leftovers.scan() }
         case .startup: startup.reload()
         }
     }
@@ -154,6 +158,7 @@ struct RootView: View {
         case .memory: MemoryView(apps: memoryApps)
         case .clean: CleanView(cleaner: cleaner)
         case .storage: StorageView(scanner: storage, largeFiles: largeFiles, downloads: downloads, mode: storageMode)
+        case .apps: AppsView(leftovers: leftovers)
         case .startup: StartupView(items: startup)
         }
     }
@@ -166,7 +171,7 @@ private struct TabBar: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            // ⌘1–4 live in the View menu.
+            // ⌘1–6 live in the View menu.
             ForEach(Page.allCases) { page in
                 let selected = selection == page
                 Button { selection = page } label: {
