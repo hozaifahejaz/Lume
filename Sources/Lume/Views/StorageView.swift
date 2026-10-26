@@ -5,12 +5,14 @@ import AppKit
 enum StorageMode: String, CaseIterable {
     case folders = "Folders"
     case largeFiles = "Large Files"
+    case downloads = "Downloads"
 }
 
 struct StorageView: View {
     @EnvironmentObject private var diskSpace: DiskSpace
     @ObservedObject var scanner: StorageScanner
     @ObservedObject var largeFiles: FileSweep
+    @ObservedObject var downloads: FileSweep
     @ObservedObject var mode: ViewState<StorageMode>
 
     var body: some View {
@@ -38,6 +40,7 @@ struct StorageView: View {
                         switch mode.value {
                         case .folders: Breadcrumbs(path: scanner.path) { scanner.goBack(to: $0) }
                         case .largeFiles: sectionTitle("Over 1 GB, not opened in six months")
+                        case .downloads: sectionTitle("Installers and archives in Downloads, over 30 days old")
                         }
                         Spacer()
                         if scanner.isScanning && mode.value == .folders {
@@ -63,6 +66,11 @@ struct StorageView: View {
                                   empty: "No files over 1 GB that you haven’t opened in six months.") { file in
                             file.date.map { "Last opened \($0.ago)" } ?? ""
                         }
+                    case .downloads:
+                        SweepList(sweep: downloads,
+                                  empty: "No disk images, installers or archives older than 30 days in Downloads.") { file in
+                            file.date.map { "Downloaded \($0.ago)" } ?? ""
+                        }
                     }
                 }
             }
@@ -78,6 +86,7 @@ struct StorageView: View {
         switch mode.value {
         case .folders: return scanner.isScanning
         case .largeFiles: return largeFiles.isScanning
+        case .downloads: return downloads.isScanning
         }
     }
 
@@ -85,6 +94,7 @@ struct StorageView: View {
         switch mode.value {
         case .folders: await scanner.rescan()
         case .largeFiles: await largeFiles.scan()
+        case .downloads: await downloads.scan()
         }
     }
 
