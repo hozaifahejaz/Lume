@@ -79,14 +79,29 @@ private struct PanelButtonStyle: ButtonStyle {
     var prominent = false
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(prominent ? Color.white : Theme.ink)
-            .padding(.horizontal, 14)
-            .frame(height: 28)
-            .background(Capsule().fill(prominent ? Theme.accent : Color.black.opacity(0.06)))
-            .overlay(Capsule().strokeBorder(Color.white.opacity(prominent ? 0.25 : 0.6), lineWidth: 0.5))
-            .opacity(configuration.isPressed ? 0.75 : 1)
-            .contentShape(Capsule())
+        Face(configuration: configuration, prominent: prominent)
+    }
+
+    /// A view of its own, so it can read whether the button is enabled.
+    private struct Face: View {
+        let configuration: Configuration
+        let prominent: Bool
+        @Environment(\.isEnabled) private var isEnabled
+
+        var body: some View {
+            label.opacity(isEnabled ? 1 : 0.45)
+        }
+
+        private var label: some View {
+            configuration.label
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(prominent ? Color.white : Theme.ink)
+                .padding(.horizontal, 14)
+                .frame(height: 28)
+                .background(Capsule().fill(prominent ? Theme.accent : Color.black.opacity(0.06)))
+                .overlay(Capsule().strokeBorder(Color.white.opacity(prominent ? 0.25 : 0.6), lineWidth: 0.5))
+                .opacity(configuration.isPressed ? 0.75 : 1)
+                .contentShape(Capsule())
+        }
     }
 }
