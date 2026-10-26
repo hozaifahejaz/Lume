@@ -61,19 +61,48 @@ enum LibraryPlaces {
         return parts.count >= 3 && parts.allSatisfy { !$0.isEmpty && !$0.contains(" ") }
     }
 
-    /// The entries in each place named after `id` (or one of its helpers, "id.helper"), or exactly after the app's name.
-    static func entries(for id: String, name: String?) -> [(url: URL, label: String)] {
+    /// "com.vendor" from "com.vendor.app.helper".
+    static func vendor(_ id: String) -> String {
+        id.lowercased().split(separator: ".").prefix(2).joined(separator: ".")
+    }
+
+    /// Bundle identifiers of the apps in the usual folders, one level of subfolders deep.
+    static func installedIdentifiers() -> Set<String> {
         let fm = FileManager.default
-        var found: [(URL, String)] = []
+        let roots = ["/Applications", "/System/Applications", fm.homeDirectoryForCurrentUser.appending(path: "Applications").path]
+        var ids: Set<String> = []
+        for root in roots {
+            for name in (try? fm.contentsOfDirectory(atPath: root)) ?? [] {
+                let path = root + "/" + name
+                if name.hasSuffix(".app") {
+                    if let id = Bundle(path: path)?.bundleIdentifier { ids.insert(id) }
+                } else {
+                    for inner in (try? fm.contentsOfDirectory(atPath: path)) ?? [] where inner.hasSuffix(".app") {
+                        if let id = Bundle(path: path + "/" + inner)?.bundleIdentifier { ids.insert(id) }
+                    }
+                }
+            }
+        }
+        return ids
+    }
+
+    /// The entries in each place named after `id` (or one of its helpers, "id.helper"), or exactly after the app's name.
+    /// An entry belonging to another installed app whose identifier extends this one ("id.pro") is left out.
+    static func entries(for id: String, name: String?,
+                        installed: Set<String> = []) -> [(url: URL, label: String, byName: Bool)] {
+        let others = installed.filter { $0.hasPrefix(id + ".") }
+        let fm = FileManager.default
+        var found: [(URL, String, Bool)] = []
         for place in all {
             let folder = url(place.folder)
             guard let names = try? fm.contentsOfDirectory(atPath: folder.path) else { continue }
             for entry in names {
                 let entryID = identifier(of: entry)
-                let byID = entryID == id || entryID.hasPrefix(id + ".")
+                let byID = (entryID == id || entryID.hasPrefix(id + "."))
+                    && !others.contains { entryID == $0 || entryID.hasPrefix($0 + ".") }
                 // Folders named after the app itself, such as "Application Support/Slack".
                 let byName = name.map { entry == $0 && place.folder != "Preferences" } ?? false
-                if byID || byName { found.append((folder.appending(path: entry), place.label)) }
+                if byID || byName { found.append((folder.appending(path: entry), place.label, !byID)) }
             }
         }
         return found
@@ -114,11 +143,11 @@ final class Uninstaller: ObservableObject {
         guard info.refusal == nil else { return }
         isWorking = true
         Task {
-            let (files, places) = await Task.detached(priority: .userInitiated) { Self.measure(info) }.value
+            let (files, places, unsure) = await Task.detached(priority: .userInitiated) { Self.measure(info) }.value
             guard app == info else { return }
             self.places = places
             self.files = files
-            selected = Set(files.map(\.url))
+            selected = Set(files.map(\.url)).subtracting(unsure)
             isWorking = false
         }
     }
@@ -185,15 +214,22 @@ final class Uninstaller: ObservableObject {
         }
     }
 
-    nonisolated private static func measure(_ app: AppInfo) -> ([SweepFile], [URL: String]) {
+    /// The bundle and its files. A folder matched only by the app's name (such as "Application Support/Google")
+    /// may be shared with another app from the same maker, so it's listed but left unticked when one is installed.
+    nonisolated private static func measure(_ app: AppInfo) -> ([SweepFile], [URL: String], Set<URL>) {
         var files = [SweepFile(url: app.url, size: DiskSize.of(app.url), date: nil)]
         var places: [URL: String] = [:]
-        for (url, label) in LibraryPlaces.entries(for: app.bundleID, name: app.name) {
+        var unsure: Set<URL> = []
+        let vendor = LibraryPlaces.vendor(app.bundleID)
+        let installed = LibraryPlaces.installedIdentifiers()
+        let siblings = installed.contains { $0 != app.bundleID && LibraryPlaces.vendor($0) == vendor }
+        for (url, label, byName) in LibraryPlaces.entries(for: app.bundleID, name: app.name, installed: installed) {
             let size = DiskSize.of(url) + fileSize(url)
             files.append(SweepFile(url: url, size: size, date: nil))
             places[url] = label
+            if byName && siblings { unsure.insert(url) }
         }
-        return (files, places)
+        return (files, places, unsure)
     }
 
     nonisolated static func fileSize(_ url: URL) -> Int64 {
@@ -257,8 +293,8 @@ final class Leftovers: ObservableObject {
     nonisolated private static func find(running: Set<String>) -> [Leftover] {
         let fm = FileManager.default
         let cutoff = Date().addingTimeInterval(-30 * 24 * 60 * 60)
-        let installed = installedIdentifiers()
-        let vendors = Set(installed.map(vendor))
+        let installed = LibraryPlaces.installedIdentifiers()
+        let vendors = Set(installed.map(LibraryPlaces.vendor))
 
         var byID: [String: (urls: [URL], places: [String])] = [:]
         for place in LibraryPlaces.all {
@@ -267,7 +303,7 @@ final class Leftovers: ObservableObject {
             for entry in names {
                 let id = LibraryPlaces.identifier(of: entry)
                 guard LibraryPlaces.looksLikeIdentifier(id), !id.lowercased().hasPrefix("com.apple."),
-                      !vendors.contains(vendor(id)), !running.contains(where: { related(id, $0) }),
+                      !vendors.contains(LibraryPlaces.vendor(id)), !running.contains(where: { related(id, $0) }),
                       !installed.contains(where: { related(id, $0) }) else { continue }
                 let url = folder.appending(path: entry)
                 // Something that changed recently is still in use by something, even without an app.
@@ -288,34 +324,9 @@ final class Leftovers: ObservableObject {
         .sorted { $0.size > $1.size }
     }
 
-    /// "com.vendor" from "com.vendor.app.helper".
-    nonisolated private static func vendor(_ id: String) -> String {
-        id.lowercased().split(separator: ".").prefix(2).joined(separator: ".")
-    }
-
     /// The same identifier, or one is the other's helper ("com.foo.app" and "com.foo.app.agent").
     nonisolated private static func related(_ a: String, _ b: String) -> Bool {
         let a = a.lowercased(), b = b.lowercased()
         return a == b || a.hasPrefix(b + ".") || b.hasPrefix(a + ".")
-    }
-
-    /// Bundle identifiers of the apps in the usual folders, one level of subfolders deep.
-    nonisolated private static func installedIdentifiers() -> Set<String> {
-        let fm = FileManager.default
-        let roots = ["/Applications", "/System/Applications", fm.homeDirectoryForCurrentUser.appending(path: "Applications").path]
-        var ids: Set<String> = []
-        for root in roots {
-            for name in (try? fm.contentsOfDirectory(atPath: root)) ?? [] {
-                let path = root + "/" + name
-                if name.hasSuffix(".app") {
-                    if let id = Bundle(path: path)?.bundleIdentifier { ids.insert(id) }
-                } else {
-                    for inner in (try? fm.contentsOfDirectory(atPath: path)) ?? [] where inner.hasSuffix(".app") {
-                        if let id = Bundle(path: path + "/" + inner)?.bundleIdentifier { ids.insert(id) }
-                    }
-                }
-            }
-        }
-        return ids
     }
 }
