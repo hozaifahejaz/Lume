@@ -8,7 +8,12 @@ struct MemoryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.gap) {
             MemoryHeader()
-            MemoryBreakdown()
+            HStack(alignment: .top, spacing: Theme.gap) {
+                MemoryBreakdown()
+                FreeRAMCard().frame(width: 240)
+            }
+            // Both panels take the height of the taller one's content.
+            .fixedSize(horizontal: false, vertical: true)
 
             GlassPanel {
                 VStack(alignment: .leading, spacing: 8) {
@@ -32,24 +37,9 @@ struct MemoryView: View {
 
 private struct MemoryHeader: View {
     @EnvironmentObject private var monitor: SystemMonitor
-    @ObservedObject private var actions = QuickActions.shared
 
     var body: some View {
-        PageHeader(title: title, subtitle: subtitle) {
-            Button {
-                actions.freeRAM()
-            } label: {
-                if actions.running == .freeingMemory {
-                    // A quiet spinner in place of the icon while macOS asks for the password and purges.
-                    Label { Text("Freeing…") } icon: { ProgressView().controlSize(.small) }
-                } else {
-                    Label("Free RAM…", systemImage: "memorychip")
-                }
-            }
-            .glassButton()
-            .disabled(actions.running != nil)
-            .help("Empties the file cache with macOS’s own purge; asks for your password")
-        }
+        PageHeader(title: title, subtitle: subtitle)
     }
 
     private var title: String {
@@ -66,10 +56,9 @@ private struct MemoryHeader: View {
     }
 }
 
-/// What the memory holds, as one bar and four figures, with swap and the last Free RAM result beneath.
+/// What the memory holds, as one bar and four figures, with swap beneath.
 private struct MemoryBreakdown: View {
     @EnvironmentObject private var monitor: SystemMonitor
-    @ObservedObject private var actions = QuickActions.shared
 
     private struct Part: Identifiable {
         let id: String
@@ -85,7 +74,7 @@ private struct MemoryBreakdown: View {
             Part(id: "Compressed", bytes: memory.compressed, color: Theme.storageTones[2]),
             Part(id: "Cached files", bytes: memory.cached, color: Theme.storageOther),
         ]
-        GlassPanel(fill: false) {
+        GlassPanel {
             VStack(alignment: .leading, spacing: 16) {
                 bar(parts, total: memory.total)
 
@@ -110,20 +99,9 @@ private struct MemoryBreakdown: View {
 
                 Hairline()
 
-                HStack {
-                    Text("Swap used \(memory.swapUsed.bytes) · \(memory.free.bytes) free")
-                        .font(Theme.caption)
-                        .foregroundStyle(Theme.secondary)
-                    Spacer()
-                    // The last Free RAM result.
-                    if let result = actions.memoryResult {
-                        Text(result)
-                            .font(Theme.caption)
-                            .foregroundStyle(Theme.secondary)
-                            .lineLimit(1)
-                            .transition(.opacity)
-                    }
-                }
+                Text("Swap used \(memory.swapUsed.bytes)")
+                    .font(Theme.caption)
+                    .foregroundStyle(Theme.secondary)
             }
         }
     }
@@ -148,6 +126,60 @@ private struct MemoryBreakdown: View {
         }
         .frame(height: 14)
         .clipShape(Capsule())
+    }
+}
+
+/// Free RAM as the page's one large action: a round accent button, like Clean's, with the result beneath.
+private struct FreeRAMCard: View {
+    @EnvironmentObject private var monitor: SystemMonitor
+    @ObservedObject private var actions = QuickActions.shared
+    @StateObject private var hovering = ViewState(false)
+
+    private var busy: Bool { actions.running == .freeingMemory }
+    private var enabled: Bool { actions.running == nil }
+
+    var body: some View {
+        GlassPanel {
+            VStack(spacing: 12) {
+                Spacer(minLength: 0)
+                Button { actions.freeRAM() } label: {
+                    ZStack {
+                        Circle().stroke(Theme.accent.opacity(hovering.value && enabled ? 0.35 : 0.15), lineWidth: 3)
+                            .frame(width: 92, height: 92)
+                        Circle()
+                            .fill(Theme.accent)
+                            .frame(width: 76, height: 76)
+                            .shadow(color: Theme.accent.opacity(0.3), radius: 10, y: 4)
+                        if busy {
+                            ProgressView().controlSize(.small).tint(.white)
+                        } else {
+                            Image(systemName: "memorychip")
+                                .font(.system(size: 26, weight: .medium))
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    .scaleEffect(hovering.value && enabled ? 1.03 : 1)
+                    .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!enabled)
+                .onHover { hovering.value = $0 }
+                .animation(.smooth(duration: 0.2), value: hovering.value)
+                .help("Empties the file cache with macOS’s own purge; asks for your password")
+                .accessibilityLabel("Free RAM")
+
+                Text(busy ? "Freeing…" : "Free RAM")
+                    .font(Theme.sectionTitle)
+                    .foregroundStyle(enabled || busy ? Theme.ink : Theme.tertiary)
+                Text(actions.memoryResult ?? "\(monitor.memory.free.bytes) free")
+                    .font(Theme.caption)
+                    .foregroundStyle(Theme.secondary)
+                    .contentTransition(.opacity)
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity)
+            .opacity(enabled || busy ? 1 : 0.6)
+        }
     }
 }
 
