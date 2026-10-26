@@ -153,6 +153,7 @@ final class Uninstaller: ObservableObject {
     }
 
     func clear() {
+        isWorking = false
         app = nil
         files = []
         selected = []
@@ -283,11 +284,12 @@ final class Leftovers: ObservableObject {
             }
         }.value
         let ids = Set(moved.map(\.id))
-        items.removeAll { ids.contains($0.id) }
         selected.subtract(ids)
         let size = moved.reduce(0) { $0 + $1.size }
         result = moved.isEmpty ? "Couldn’t move to the Trash"
-            : "Moved data from \(moved.count == 1 ? "1 app" : "\(moved.count) apps") (\(size.bytes)) to the Trash"
+            : "Moved \(moved.count == 1 ? "1 item" : "\(moved.count) items") (\(size.bytes)) to the Trash"
+        // Measure again, so an entry only partly moved shows what is really left of it.
+        await scan()
     }
 
     nonisolated private static func find(running: Set<String>) -> [Leftover] {
