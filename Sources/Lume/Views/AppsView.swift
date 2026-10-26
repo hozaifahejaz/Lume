@@ -8,14 +8,12 @@ struct AppsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.gap) {
-            PageHeader(title: "Apps") {
-                Button("Choose App…") { uninstaller.chooseApp() }
-                    .glassButton()
-            }
+            PageHeader(title: "Apps")
 
-            GlassPanel { UninstallPanel(uninstaller: uninstaller) }
-            // Hugs its rows: one line when there's nothing, up to four rows before it scrolls.
-            GlassPanel(fill: false) { LeftoversPanel(leftovers: leftovers) }
+            HStack(alignment: .top, spacing: Theme.gap) {
+                GlassPanel { UninstallPanel(uninstaller: uninstaller) }
+                GlassPanel { LeftoversPanel(leftovers: leftovers) }
+            }
         }
     }
 }
@@ -45,10 +43,16 @@ private struct UninstallPanel: View {
 
     private var dropZone: some View {
         VStack(spacing: 12) {
-            Image(systemName: "arrow.down.app")
+            Image(systemName: "trash.square")
                 .font(.system(size: 34, weight: .light))
                 .foregroundStyle(targeted.value ? Theme.accent : Theme.tertiary)
-            Text("Drop an app here").font(Theme.sectionTitle).foregroundStyle(Theme.ink)
+            Text("Uninstall an app").font(Theme.sectionTitle).foregroundStyle(Theme.ink)
+            Text("Drop an app here to remove it and its files")
+                .font(Theme.caption)
+                .foregroundStyle(Theme.secondary)
+            Button("Choose App…") { uninstaller.chooseApp() }
+                .glassButton()
+                .padding(.top, 6)
             if let message = uninstaller.message {
                 Text(message).font(Theme.caption).foregroundStyle(Theme.secondary).padding(.top, 4)
             }
@@ -206,7 +210,20 @@ private struct LeftoversPanel: View {
                     }
                 }
                 .quietScroll()
-                .frame(height: CGFloat(min(leftovers.items.count, 4)) * 40)
+            } else if leftovers.scanned && !leftovers.isScanning {
+                // Mirrors the drop zone beside it, so the two panels read as a pair.
+                VStack(spacing: 12) {
+                    Image(systemName: "checkmark.circle")
+                        .font(.system(size: 34, weight: .light))
+                        .foregroundStyle(Theme.tertiary)
+                    Text("No leftovers").font(Theme.sectionTitle).foregroundStyle(Theme.ink)
+                    Text("Files left behind by deleted apps show up here")
+                        .font(Theme.caption)
+                        .foregroundStyle(Theme.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                Spacer(minLength: 0)
             }
 
             if !leftovers.items.isEmpty || leftovers.result != nil {
@@ -230,7 +247,7 @@ private struct LeftoversPanel: View {
     /// "Nothing found", or "2 · 140 MB".
     private var status: String {
         guard leftovers.scanned else { return "" }
-        guard !leftovers.items.isEmpty else { return "Nothing found" }
+        guard !leftovers.items.isEmpty else { return "" }
         return "\(leftovers.items.count) · \(leftovers.items.reduce(0) { $0 + $1.size }.bytes)"
     }
 
