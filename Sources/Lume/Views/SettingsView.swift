@@ -1,8 +1,7 @@
 import SwiftUI
 import ServiceManagement
 
-/// Two choices on glass over the same still backdrop as the main window:
-/// whether Lume opens at login, and what the menu bar shows.
+/// Lume's few choices on glass over the same still backdrop as the main window.
 struct SettingsView: View {
     @AppStorage(MenuBarMeter.showsCPUKey) private var showsCPU = false
     @AppStorage(Alerts.enabledKey) private var alerts = true
@@ -11,8 +10,9 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(spacing: 16) {
+            // Grouped the way System Settings groups related rows: one glass panel, hairlines between.
             GlassPanel(fill: false) {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 10) {
                     row("Open at login") {
                         Toggle("Open at login", isOn: Binding(get: { login.isEnabled }, set: { login.set($0) }))
                             .toggleStyle(.switch)
@@ -27,24 +27,22 @@ struct SettingsView: View {
                             .foregroundStyle(Theme.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                }
-            }
-
-            GlassPanel(fill: false) {
-                row("Menu bar shows") {
-                    Picker("Menu bar shows", selection: $showsCPU) {
-                        Text("Icon").tag(false)
-                        Text("Icon and processor %").tag(true)
+                    Hairline()
+                    row("Menu bar shows") {
+                        Picker("Menu bar shows", selection: $showsCPU) {
+                            Text("Icon").tag(false)
+                            Text("Icon and processor %").tag(true)
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .tint(Theme.graphite)
+                        .fixedSize()
                     }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .tint(Theme.graphite)
-                    .fixedSize()
                 }
             }
 
             GlassPanel(fill: false) {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 10) {
                     row("Quick Clean weekly", help: "Clears caches and logs once a week") {
                         Toggle("Quick Clean weekly", isOn: $weekly)
                             .toggleStyle(.switch)
@@ -57,11 +55,7 @@ struct SettingsView: View {
                             .font(Theme.caption)
                             .foregroundStyle(Theme.secondary)
                     }
-                }
-            }
-
-            GlassPanel(fill: false) {
-                VStack(alignment: .leading, spacing: 6) {
+                    Hairline()
                     row("Alerts", help: "When the disk is nearly full, or memory pressure stays high; at most once a day each") {
                         Toggle("Alerts", isOn: $alerts)
                             .toggleStyle(.switch)

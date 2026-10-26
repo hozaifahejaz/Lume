@@ -13,10 +13,9 @@ struct AppsView: View {
                     .glassButton()
             }
 
-            HStack(alignment: .top, spacing: Theme.gap) {
-                GlassPanel { UninstallPanel(uninstaller: uninstaller) }
-                GlassPanel { LeftoversPanel(leftovers: leftovers) }
-            }
+            GlassPanel { UninstallPanel(uninstaller: uninstaller) }
+            // Hugs its rows: one line when there's nothing, up to four rows before it scrolls.
+            GlassPanel(fill: false) { LeftoversPanel(leftovers: leftovers) }
         }
     }
 }
@@ -189,18 +188,16 @@ private struct LeftoversPanel: View {
                 Text("Leftovers").font(Theme.sectionTitle).foregroundStyle(Theme.ink)
                     .help("Data from apps no longer on this Mac, untouched for a month")
                 Spacer()
-                if leftovers.isScanning { ProgressView().controlSize(.small) }
+                if leftovers.isScanning {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Text(status).font(Theme.caption).foregroundStyle(Theme.secondary)
+                }
             }
             .padding(.horizontal, 8)
             .frame(height: 24)
 
-            if leftovers.items.isEmpty {
-                Text(leftovers.scanned ? "Nothing found" : "Looking…")
-                    .font(Theme.body)
-                    .foregroundStyle(Theme.secondary)
-                    .padding(8)
-                Spacer(minLength: 0)
-            } else {
+            if !leftovers.items.isEmpty {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(leftovers.items) { item in
@@ -209,8 +206,10 @@ private struct LeftoversPanel: View {
                     }
                 }
                 .quietScroll()
+                .frame(height: CGFloat(min(leftovers.items.count, 4)) * 40)
             }
 
+            if !leftovers.items.isEmpty || leftovers.result != nil {
             HStack(spacing: 12) {
                 Text(footnote)
                     .font(Theme.caption)
@@ -222,10 +221,17 @@ private struct LeftoversPanel: View {
                     .disabled(leftovers.selected.isEmpty)
             }
             .padding(.horizontal, 8)
-            .opacity(leftovers.items.isEmpty && leftovers.result == nil ? 0 : 1)
+            }
         }
         .animation(.smooth(duration: 0.35), value: leftovers.items)
         .task { if !leftovers.scanned { await leftovers.scan() } }
+    }
+
+    /// "Nothing found", or "2 · 140 MB".
+    private var status: String {
+        guard leftovers.scanned else { return "" }
+        guard !leftovers.items.isEmpty else { return "Nothing found" }
+        return "\(leftovers.items.count) · \(leftovers.items.reduce(0) { $0 + $1.size }.bytes)"
     }
 
     private var footnote: String {
