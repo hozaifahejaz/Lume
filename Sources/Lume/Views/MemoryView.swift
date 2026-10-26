@@ -127,12 +127,15 @@ private struct MemoryBreakdown: View {
     /// One capsule split by what the memory holds; free memory is the plain track.
     private func bar(_ parts: [Part], total: UInt64) -> some View {
         GeometryReader { geo in
-            let width = geo.size.width
+            // The parts can add up to a little more than physical memory between samples;
+            // scale to whichever is larger, and leave room for the 1pt gaps, so the bar never overflows.
+            let scale = Double(max(total, parts.reduce(0) { $0 + $1.bytes }, 1))
+            let width = max(0, geo.size.width - CGFloat(parts.count))
             HStack(spacing: 1) {
                 ForEach(parts) { part in
                     Rectangle()
                         .fill(part.color)
-                        .frame(width: max(1, width * CGFloat(Double(part.bytes) / Double(max(total, 1)))))
+                        .frame(width: max(1, width * CGFloat(Double(part.bytes) / scale)))
                 }
                 Spacer(minLength: 0)
             }
