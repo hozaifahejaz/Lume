@@ -51,6 +51,8 @@ struct RootView: View {
     @StateObject private var startup = StartupItems()
     @StateObject private var processes = ProcessList()
     @StateObject private var memoryApps = ProcessList(appsOnly: true)
+    @StateObject private var largeFiles = FileSweep(kind: .largeOld)
+    @StateObject private var storageMode = ViewState(StorageMode.folders)
     @Namespace private var tabs
     @Environment(\.openSettings) private var openSettings
 
@@ -135,7 +137,10 @@ struct RootView: View {
         case .clean:
             if cleaner.phase != .scanning && cleaner.phase != .cleaning { Task { await cleaner.scan() } }
         case .storage:
-            if !storage.isScanning { Task { await storage.rescan() } }
+            switch storageMode.value {
+            case .folders: if !storage.isScanning { Task { await storage.rescan() } }
+            case .largeFiles: Task { await largeFiles.scan() }
+            }
         case .startup: startup.reload()
         }
     }
@@ -146,7 +151,7 @@ struct RootView: View {
         case .overview: OverviewView(processes: processes, goTo: { navigator.page = $0 })
         case .memory: MemoryView(apps: memoryApps)
         case .clean: CleanView(cleaner: cleaner)
-        case .storage: StorageView(scanner: storage)
+        case .storage: StorageView(scanner: storage, largeFiles: largeFiles, mode: storageMode)
         case .startup: StartupView(items: startup)
         }
     }

@@ -1,19 +1,27 @@
 import SwiftUI
 import AppKit
 
+/// What the lower panel lists.
+enum StorageMode: String, CaseIterable {
+    case folders = "Folders"
+    case largeFiles = "Large Files"
+}
+
 struct StorageView: View {
     @EnvironmentObject private var diskSpace: DiskSpace
     @ObservedObject var scanner: StorageScanner
+    @ObservedObject var largeFiles: FileSweep
+    @ObservedObject var mode: ViewState<StorageMode>
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.gap) {
             PageHeader(title: "\(diskSpace.stats.used.bytes) used of \(diskSpace.stats.total.bytes)",
                        subtitle: "\(diskSpace.stats.available.bytes) available") {
-                Button { Task { await scanner.rescan() } } label: {
+                Button { Task { await rescan() } } label: {
                     Label("Rescan", systemImage: "arrow.clockwise")
                 }
                 .glassButton()
-                .disabled(scanner.isScanning)
+                .disabled(isScanning)
             }
 
             GlassPanel(fill: false) {
@@ -24,21 +32,67 @@ struct StorageView: View {
                 }
             }
 
-            GlassPanel(fill: false) {
+            GlassPanel(fill: mode.value != .folders) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 12) {
-                        Breadcrumbs(path: scanner.path) { scanner.goBack(to: $0) }
+                        switch mode.value {
+                        case .folders: Breadcrumbs(path: scanner.path) { scanner.goBack(to: $0) }
+                        case .largeFiles: sectionTitle("Over 1 GB, not opened in six months")
+                        }
                         Spacer()
-                        if scanner.isScanning {
+                        if scanner.isScanning && mode.value == .folders {
                             ProgressView(value: scanner.progress)
                                 .progressViewStyle(.linear)
                                 .tint(Theme.graphite)
                                 .frame(width: 120)
                         }
+                        Picker("Show", selection: $mode.value) {
+                            ForEach(StorageMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .fixedSize()
                     }
                     .padding(.horizontal, 8)
                     .frame(height: 24)
 
+                    switch mode.value {
+                    case .folders: folderList
+                    case .largeFiles:
+                        SweepList(sweep: largeFiles,
+                                  empty: "No files over 1 GB that you haven’t opened in six months.") { file in
+                            file.date.map { "Last opened \($0.ago)" } ?? ""
+                        }
+                    }
+                }
+            }
+            .frame(maxHeight: .infinity, alignment: .top)
+        }
+        .animation(.smooth(duration: 0.5), value: scanner.folders)
+        .animation(.smooth(duration: 0.35), value: scanner.path)
+        .animation(.smooth(duration: 0.35), value: scanner.children)
+        .task { if scanner.folders.isEmpty && !scanner.isScanning { await scanner.scan() } }
+    }
+
+    private var isScanning: Bool {
+        switch mode.value {
+        case .folders: return scanner.isScanning
+        case .largeFiles: return largeFiles.isScanning
+        }
+    }
+
+    func rescan() async {
+        switch mode.value {
+        case .folders: await scanner.rescan()
+        case .largeFiles: await largeFiles.scan()
+        }
+    }
+
+    private func sectionTitle(_ title: String) -> some View {
+        Text(title).font(Theme.sectionTitle).foregroundStyle(Theme.ink).lineLimit(1)
+    }
+
+    @ViewBuilder private var folderList: some View {
                     let rows = scanner.visible
                     Group {
                         if rows.isEmpty && !scanner.isScanning {
@@ -69,14 +123,6 @@ struct StorageView: View {
                         .padding(.horizontal, 8)
                         .padding(.top, 4)
                     }
-                }
-            }
-            .frame(maxHeight: .infinity, alignment: .top)
-        }
-        .animation(.smooth(duration: 0.5), value: scanner.folders)
-        .animation(.smooth(duration: 0.35), value: scanner.path)
-        .animation(.smooth(duration: 0.35), value: scanner.children)
-        .task { if scanner.folders.isEmpty && !scanner.isScanning { await scanner.scan() } }
     }
 
     /// The largest folders that are at least 3% of the disk, then "System & other" for the
