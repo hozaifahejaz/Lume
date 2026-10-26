@@ -12,15 +12,29 @@ struct JunkCategory: Identifiable, Hashable {
     let url: URL
     var group: Group = .general
     var onByDefault = true
+    /// Only items left untouched this long are removed; anything newer may still be in use.
+    var minAge: TimeInterval? = nil
+    /// A general row that isn't shown at all when its folder doesn't exist, instead of "Not found".
+    var hiddenWhenMissing = false
 
     static var all: [JunkCategory] {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let developer = home.appending(path: "Library/Developer")
+        let day: TimeInterval = 24 * 60 * 60
         return [
-            JunkCategory(id: "caches", name: "App caches", detail: "Rebuilt when needed. Caches of open apps are kept.",
+            JunkCategory(id: "caches", name: "App caches", detail: "Data apps rebuild when they need it",
                          symbol: "shippingbox", url: home.appending(path: "Library/Caches")),
-            JunkCategory(id: "logs", name: "Logs", detail: "Diagnostic logs from apps and the system",
+            JunkCategory(id: "temp", name: "Temporary files", detail: "Left by apps, untouched for three days",
+                         symbol: "clock.arrow.circlepath", url: URL(fileURLWithPath: NSTemporaryDirectory()),
+                         minAge: 3 * day),
+            JunkCategory(id: "logs", name: "Logs", detail: "Diagnostic and crash reports",
                          symbol: "doc.text", url: home.appending(path: "Library/Logs")),
+            JunkCategory(id: "savedstate", name: "Saved window state", detail: "Window layouts unused for a month",
+                         symbol: "macwindow", url: home.appending(path: "Library/Saved Application State"),
+                         onByDefault: false, minAge: 30 * day, hiddenWhenMissing: true),
+            JunkCategory(id: "iosupdates", name: "iPhone updates", detail: "Software downloads, fetched again if needed",
+                         symbol: "iphone.and.arrow.forward", url: home.appending(path: "Library/iTunes/iPhone Software Updates"),
+                         hiddenWhenMissing: true),
             JunkCategory(id: "trash", name: "Trash", detail: "Files you already deleted",
                          symbol: "trash", url: home.appending(path: ".Trash"), onByDefault: false),
 
@@ -32,8 +46,15 @@ struct JunkCategory: Identifiable, Hashable {
             JunkCategory(id: "devicesupport", name: "iOS device support", detail: "Copied again when a device connects",
                          symbol: "cable.connector", url: developer.appending(path: "Xcode/iOS DeviceSupport"),
                          group: .developer),
-            JunkCategory(id: "npm", name: "npm cache", detail: "Downloaded packages, fetched again on install",
+            JunkCategory(id: "npm", name: "npm cache", detail: "Packages, fetched again on install",
                          symbol: "cube", url: home.appending(path: ".npm/_cacache"), group: .developer),
+            JunkCategory(id: "gradle", name: "Gradle cache", detail: "Dependencies, fetched again on build",
+                         symbol: "cube", url: home.appending(path: ".gradle/caches"), group: .developer),
+            JunkCategory(id: "cargo", name: "Cargo cache", detail: "Crates, fetched again on build",
+                         symbol: "cube", url: home.appending(path: ".cargo/registry/cache"), group: .developer),
+            JunkCategory(id: "toolcache", name: "Tool caches", detail: "Downloads kept by command-line tools",
+                         symbol: "terminal", url: home.appending(path: ".cache"), group: .developer,
+                         onByDefault: false),
             JunkCategory(id: "archives", name: "Xcode archives", detail: "Old app builds; keep any you still need",
                          symbol: "archivebox", url: developer.appending(path: "Xcode/Archives"),
                          group: .developer, onByDefault: false),
@@ -86,7 +107,10 @@ final class Cleaner: ObservableObject {
 
     /// The rows to show: every general category, plus developer folders that exist.
     var categories: [JunkCategory] {
-        all.filter { $0.group == .general || (sizes[$0.id] != nil && !missing.contains($0.id)) }
+        all.filter { category in
+            let present = sizes[category.id] != nil && !missing.contains(category.id)
+            return category.group == .general && !category.hiddenWhenMissing ? true : present
+        }
     }
 
     var selectedTotal: Int64 { total(of: selected) }
@@ -207,10 +231,19 @@ final class Cleaner: ObservableObject {
         return ids
     }
 
-    /// A cache folder named after an open app ("com.apple.Safari", "com.apple.Safari.SafeBrowsing").
+    /// Items left alone: anything newer than the category's minimum age, a cache or temporary item
+    /// named after an open app ("com.apple.Safari.SafeBrowsing", ".com.google.Chrome.x1y2"),
+    /// and the system's own temporary items and lock files.
     nonisolated private static func isKept(_ child: URL, in category: JunkCategory, keep: [String]) -> Bool {
-        guard category.id == "caches" else { return false }
-        let name = child.lastPathComponent
+        if let minAge = category.minAge {
+            let values = try? child.resourceValues(forKeys: [.contentModificationDateKey])
+            guard let changed = values?.contentModificationDate,
+                  changed < Date().addingTimeInterval(-minAge) else { return true }
+        }
+        guard category.id == "caches" || category.id == "temp" else { return false }
+        let name = child.lastPathComponent.hasPrefix(".") ? String(child.lastPathComponent.dropFirst())
+            : child.lastPathComponent
+        if category.id == "temp" && (name.hasPrefix("com.apple.") || name.lowercased().contains("lock")) { return true }
         return keep.contains { name == $0 || name.hasPrefix($0 + ".") }
     }
 

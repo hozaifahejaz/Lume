@@ -178,7 +178,20 @@ struct CleanView: View {
         return HStack(spacing: 12) {
             IconTile(symbol: category.symbol, size: compact ? 24 : Theme.tileSize)
                 .frame(width: Theme.tileSize)
-            Text(category.name).font(Theme.body.weight(.medium)).foregroundStyle(Theme.ink).lineLimit(1)
+            if compact {
+                // One line: developer rows stay short so the panel never needs to scroll.
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(category.name).font(Theme.body.weight(.medium)).foregroundStyle(Theme.ink)
+                    Text(category.detail).font(Theme.caption).foregroundStyle(Theme.secondary)
+                }
+                .lineLimit(1)
+            } else {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(category.name).font(Theme.body.weight(.medium)).foregroundStyle(Theme.ink)
+                    Text(category.detail).font(Theme.caption).foregroundStyle(Theme.secondary)
+                }
+                .lineLimit(1)
+            }
             Spacer(minLength: 12)
             if missing {
                 Text("Not found")
@@ -204,10 +217,9 @@ struct CleanView: View {
                 .disabled(locked || missing)
                 .accessibilityLabel(category.name)
         }
-        .frame(height: compact ? 36 : 44)
+        .frame(height: compact ? 34 : 46)
         .opacity(locked || missing ? 0.6 : 1)
         .hoverWash()
-        .help(category.detail)
     }
 }
 
