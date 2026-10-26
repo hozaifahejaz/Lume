@@ -88,6 +88,7 @@ final class SystemMonitor: ObservableObject {
         previousTicks = ticks
         latestMemory = Self.readMemory()
         latestPressure = Self.readPressure()
+        Alerts.check(pressure: latestPressure)
         if watched { publish() }
     }
 
@@ -213,6 +214,7 @@ final class DiskSpace: ObservableObject {
         Task {
             let stats = await Task.detached { Self.read() }.value
             if stats != self.stats { self.stats = stats }
+            Alerts.check(disk: stats)
         }
     }
 

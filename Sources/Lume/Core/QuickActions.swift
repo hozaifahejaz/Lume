@@ -1,6 +1,5 @@
 import Foundation
 import AppKit
-import UserNotifications
 
 /// Quick Clean and Free RAM, shared by the Memory page, the menu bar panel and the Dock menu,
 /// so they work with the window closed and never run twice at once.
@@ -106,15 +105,6 @@ final class QuickActions: ObservableObject {
     /// With the window on screen the result is already shown there.
     private static func notify(title: String, body: String) {
         guard !MainWindow.isOnScreen else { return }
-        // Only a real app bundle can post notifications; `swift run` can't.
-        guard Bundle.main.bundleIdentifier != nil, Bundle.main.bundlePath.hasSuffix(".app") else { return }
-        let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert]) { granted, _ in
-            guard granted else { return }
-            let content = UNMutableNotificationContent()
-            content.title = title
-            content.body = body
-            center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
-        }
+        Notifier.post(title: title, body: body)
     }
 }

@@ -5,6 +5,7 @@ import ServiceManagement
 /// whether Lume opens at login, and what the menu bar shows.
 struct SettingsView: View {
     @AppStorage(MenuBarMeter.showsCPUKey) private var showsCPU = false
+    @AppStorage(Alerts.enabledKey) private var alerts = true
     @StateObject private var login = LoginItem()
 
     var body: some View {
@@ -38,6 +39,22 @@ struct SettingsView: View {
                     .labelsHidden()
                     .tint(Theme.graphite)
                     .fixedSize()
+                }
+            }
+
+            GlassPanel(fill: false) {
+                VStack(alignment: .leading, spacing: 6) {
+                    row("Alerts") {
+                        Toggle("Alerts", isOn: $alerts)
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                            .labelsHidden()
+                            .tint(Theme.graphite)
+                    }
+                    Text("When the disk is nearly full, or memory pressure stays high. At most once a day each.")
+                        .font(Theme.caption)
+                        .foregroundStyle(Theme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
