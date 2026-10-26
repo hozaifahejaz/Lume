@@ -79,6 +79,8 @@ private struct OverviewHeader: View {
 private struct LiveStats: View {
     @EnvironmentObject private var monitor: SystemMonitor
     @EnvironmentObject private var diskSpace: DiskSpace
+    /// Read once when Overview appears; health moves over months, not seconds. Nil on desktops.
+    @StateObject private var battery = ViewState<BatteryHealth?>(nil)
 
     var body: some View {
         let disk = diskSpace.stats
@@ -109,8 +111,36 @@ private struct LiveStats: View {
                     Sparkline(values: monitor.cpuHistory)
                         .frame(height: 28)
                 }
+
+                if let health = battery.value {
+                    Hairline()
+                    batteryLine(health)
+                }
             }
         }
+        .task {
+            let health = await Task.detached(priority: .utility) { BatteryHealth.read() }.value
+            if health != battery.value { battery.value = health }
+        }
+    }
+
+    /// "Battery  97% capacity · 110 cycles · Normal", on MacBooks only.
+    private func batteryLine(_ health: BatteryHealth) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "battery.100percent")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.secondary)
+                .accessibilityHidden(true)
+            Text("Battery").font(Theme.caption).foregroundStyle(Theme.secondary)
+            Spacer()
+            Text("\(health.capacity.percent) capacity · \(health.cycles) cycles · ")
+                .font(Theme.caption)
+                .foregroundStyle(Theme.secondary)
+                + Text(health.condition)
+                .font(Theme.caption)
+                .foregroundStyle(health.needsService ? Theme.alert : Theme.secondary)
+        }
+        .accessibilityElement(children: .combine)
     }
 
     /// `alert` turns the number red; by default that happens past 85%. Memory passes it in,
