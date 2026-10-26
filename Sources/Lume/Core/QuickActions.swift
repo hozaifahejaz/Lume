@@ -26,11 +26,46 @@ final class QuickActions: ObservableObject {
             let freed = await cleaner.quickClean()
             running = nil
             guard let freed else { return }
+            UserDefaults.standard.set(Date(), forKey: Self.lastCleanKey)
             let text = freed > 0 ? "Freed \(freed.bytes)" : "Nothing to clear right now"
             cleanResult = text
             onCleaned?()
             Self.notify(title: "Quick Clean", body: text)
         }
+    }
+
+    // MARK: Weekly Quick Clean
+
+    static let weeklyKey = "quickCleanWeekly"
+    static let lastCleanKey = "lastQuickClean"
+    private var scheduleTimer: Timer?
+
+    /// Checks at launch, on wake and every few hours whether a week has passed since the last Quick Clean.
+    /// Off by default; the check itself is a date comparison.
+    func startSchedule() {
+        runIfDue()
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { _ in
+            // Give the network and disks a minute to settle after waking.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
+                MainActor.assumeIsolated { QuickActions.shared.runIfDue() }
+            }
+        }
+        let timer = Timer(timeInterval: 6 * 60 * 60, repeats: true) { _ in
+            Task { @MainActor in QuickActions.shared.runIfDue() }
+        }
+        timer.tolerance = 30 * 60
+        RunLoop.main.add(timer, forMode: .common)
+        scheduleTimer = timer
+    }
+
+    private func runIfDue() {
+        let defaults = UserDefaults.standard
+        guard defaults.bool(forKey: Self.weeklyKey), running == nil else { return }
+        if let last = defaults.object(forKey: Self.lastCleanKey) as? Date,
+           Date().timeIntervalSince(last) < 7 * 24 * 60 * 60 { return }
+        quickClean()
     }
 
     /// Runs macOS's own `purge`, which empties the file cache. It needs an administrator password,

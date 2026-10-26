@@ -83,6 +83,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         center.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated { Dock.update() }
         }
+
+        MainActor.assumeIsolated { QuickActions.shared.startSchedule() }
     }
 
     /// Lume keeps running in the menu bar after its window closes; Quit (⌘Q, the Dock or the panel) ends it.

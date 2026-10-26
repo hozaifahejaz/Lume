@@ -6,6 +6,7 @@ import ServiceManagement
 struct SettingsView: View {
     @AppStorage(MenuBarMeter.showsCPUKey) private var showsCPU = false
     @AppStorage(Alerts.enabledKey) private var alerts = true
+    @AppStorage(QuickActions.weeklyKey) private var weekly = false
     @StateObject private var login = LoginItem()
 
     var body: some View {
@@ -39,6 +40,22 @@ struct SettingsView: View {
                     .labelsHidden()
                     .tint(Theme.graphite)
                     .fixedSize()
+                }
+            }
+
+            GlassPanel(fill: false) {
+                VStack(alignment: .leading, spacing: 6) {
+                    row("Quick Clean weekly") {
+                        Toggle("Quick Clean weekly", isOn: $weekly)
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                            .labelsHidden()
+                            .tint(Theme.graphite)
+                    }
+                    Text(weeklyNote)
+                        .font(Theme.caption)
+                        .foregroundStyle(Theme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
@@ -83,6 +100,15 @@ struct SettingsView: View {
         .modifier(HiddenToolbarBackground())
         .preferredColorScheme(.light)
         .onAppear { login.refresh() }
+    }
+
+    /// "Clears caches and logs once a week. Last run 3 days ago."
+    private var weeklyNote: String {
+        var text = "Clears caches and logs once a week, quietly."
+        if let last = UserDefaults.standard.object(forKey: QuickActions.lastCleanKey) as? Date {
+            text += " Last run \(last.formatted(.relative(presentation: .named)))."
+        }
+        return text
     }
 
     private func row<Control: View>(_ title: String, @ViewBuilder control: () -> Control) -> some View {
