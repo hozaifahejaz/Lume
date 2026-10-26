@@ -117,8 +117,8 @@ struct RootView: View {
             }
         }
         list += [
-            Command(id: "quickclean", title: "Quick Clean", symbol: "sparkles") { actions.quickClean() },
-            Command(id: "freeram", title: "Free RAM…", symbol: "memorychip") {
+            Command(id: "quickclean", title: "Quick Clean", symbol: "sparkles", keywords: "caches junk") { actions.quickClean() },
+            Command(id: "freeram", title: "Free RAM…", symbol: "memorychip", keywords: "memory purge") {
                 navigator.page = .memory
                 actions.freeRAM()
             },
