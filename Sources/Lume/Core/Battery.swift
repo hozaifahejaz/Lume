@@ -18,15 +18,17 @@ struct BatteryHealth: Equatable {
         defer { IOObjectRelease(service) }
         var unmanaged: Unmanaged<CFMutableDictionary>?
         guard IORegistryEntryCreateCFProperties(service, &unmanaged, kCFAllocatorDefault, 0) == KERN_SUCCESS,
-              let properties = unmanaged?.takeRetainedValue() as? [String: Any],
+              let properties = unmanaged?.takeRetainedValue() as NSDictionary? as? [String: Any],
               properties["BatteryInstalled"] as? Bool ?? true else { return nil }
 
         let cycles = properties["CycleCount"] as? Int ?? 0
         let max = properties["MaxCapacity"] as? Int ?? 0
-        let design = properties["DesignCapacity"] as? Int ?? 0
+        // Apple silicon keeps the design figure inside BatteryData.
+        let data = properties["BatteryData"] as? [String: Any]
+        let design = properties["DesignCapacity"] as? Int ?? data?["DesignCapacity"] as? Int ?? 0
         // Apple silicon reports MaxCapacity as a percentage already; Intel Macs report it in mAh.
         let capacity: Double
-        if max > 0 && max <= 100 && design > 100 {
+        if max > 0 && max <= 100 && (design == 0 || design > 100) {
             capacity = Double(max) / 100
         } else if let raw = properties["AppleRawMaxCapacity"] as? Int, design > 0 {
             capacity = Double(raw) / Double(design)

@@ -41,6 +41,8 @@ struct LumeApp: App {
                 Divider()
                 Button("Rescan") { navigator.rescan() }
                     .keyboardShortcut("r", modifiers: .command)
+                Button("Command Bar…") { navigator.toggleCommandBar() }
+                    .keyboardShortcut("k", modifiers: .command)
                 Divider()
             }
         }

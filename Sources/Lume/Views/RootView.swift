@@ -33,6 +33,14 @@ final class Navigator: ObservableObject {
     }
 
     func rescan() { rescans += 1 }
+
+    /// The ⌘K palette.
+    @Published var commandBarOpen = false
+
+    func toggleCommandBar() {
+        commandBarOpen.toggle()
+        if commandBarOpen { MainWindow.open() }
+    }
 }
 
 struct RootView: View {
@@ -44,6 +52,7 @@ struct RootView: View {
     @StateObject private var processes = ProcessList()
     @StateObject private var memoryApps = ProcessList(appsOnly: true)
     @Namespace private var tabs
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -80,9 +89,43 @@ struct RootView: View {
             .padding(.trailing, 12)
             .ignoresSafeArea()
         }
+        .overlay(alignment: .top) {
+            if navigator.commandBarOpen {
+                ZStack(alignment: .top) {
+                    // A faint veil; clicking it closes the bar.
+                    Color.black.opacity(0.06)
+                        .ignoresSafeArea()
+                        .onTapGesture { navigator.commandBarOpen = false }
+                    CommandBar(commands: commands) { navigator.commandBarOpen = false }
+                        .padding(.top, 96)
+                }
+                .transition(.opacity)
+            }
+        }
         .preferredColorScheme(.light)
         .animation(.easeInOut(duration: 0.22), value: navigator.page)
+        .animation(.easeOut(duration: 0.15), value: navigator.commandBarOpen)
         .onChange(of: navigator.rescans) { rescan() }
+    }
+
+    /// Every tab, then the actions.
+    private var commands: [Command] {
+        let actions = QuickActions.shared
+        var list = Page.allCases.enumerated().map { index, page in
+            Command(id: page.rawValue, title: page.rawValue, symbol: page.symbol, shortcut: "⌘\(index + 1)") {
+                navigator.page = page
+            }
+        }
+        list += [
+            Command(id: "quickclean", title: "Quick Clean", symbol: "sparkles") { actions.quickClean() },
+            Command(id: "freeram", title: "Free RAM…", symbol: "memorychip") {
+                navigator.page = .memory
+                actions.freeRAM()
+            },
+            Command(id: "rescan", title: "Rescan", symbol: "arrow.clockwise", shortcut: "⌘R") { navigator.rescan() },
+            Command(id: "settings", title: "Settings…", symbol: "gearshape", shortcut: "⌘,") { openSettings() },
+        ]
+        return list
     }
 
     private func rescan() {
