@@ -135,10 +135,15 @@ final class SystemMonitor: ObservableObject {
         var wired: UInt64 = 0
         var compressed: UInt64 = 0
         var app: UInt64 = 0
+        /// Copies of files kept in memory; macOS drops them the moment anything else needs the room.
+        var cached: UInt64 = 0
+        /// Neither in use nor caching anything.
+        var free: UInt64 = 0
+        var swapUsed: UInt64 = 0
         var fraction: Double { total > 0 ? Double(used) / Double(total) : 0 }
     }
 
-    private static func readMemory() -> MemoryStats {
+    nonisolated static func readMemory() -> MemoryStats {
         var stats = vm_statistics64()
         var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64_data_t>.stride / MemoryLayout<integer_t>.stride)
         let result = withUnsafeMutablePointer(to: &stats) {
@@ -156,6 +161,12 @@ final class SystemMonitor: ObservableObject {
         out.wired = UInt64(stats.wire_count) * page
         out.compressed = UInt64(stats.compressor_page_count) * page
         out.used = out.app + out.wired + out.compressed
+        out.cached = (UInt64(stats.external_page_count) + purgeablePages) * page
+        out.free = (UInt64(stats.free_count) + UInt64(stats.speculative_count)) * page
+
+        var swap = xsw_usage()
+        var size = MemoryLayout<xsw_usage>.size
+        if sysctlbyname("vm.swapusage", &swap, &size, nil, 0) == 0 { out.swapUsed = swap.xsu_used }
         return out
     }
 

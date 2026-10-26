@@ -156,6 +156,20 @@ final class Cleaner: ObservableObject {
         lastScanned = Date()
     }
 
+    /// Quick Clean: the default selection, measured and cleared without the Clean page.
+    /// Caches of open apps are kept as always. Returns the bytes freed, or nil when Clean is already busy.
+    func quickClean() async -> Int64? {
+        guard phase != .scanning && phase != .cleaning else { return nil }
+        let chosen = selected
+        selected = Set(all.filter(\.onByDefault).map(\.id))
+        phase = .scanning
+        await measure()
+        await clean()
+        selected = chosen
+        if case .done(let freed) = phase { return freed }
+        return 0
+    }
+
     func clean() async {
         let targets = all.filter { selected.contains($0.id) && !unreadable.contains($0.id) && !missing.contains($0.id) }
         let before = selectedTotal

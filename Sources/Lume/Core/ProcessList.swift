@@ -28,12 +28,18 @@ final class ProcessList: ObservableObject {
     @Published private(set) var processes: [ProcessUsage] = []
     @Published var sort: Sort = .memory { didSet { apply() } }
 
+    /// Only rows that belong to an app bundle, for the Memory page.
+    private let appsOnly: Bool
     private var raw: [ProcessUsage] = []
     private var timer: Timer?
     private var refreshTask: Task<Void, Never>?
     private var generation = 0
     private var previousCPUTime: [Int32: UInt64] = [:]
     private var previousSampleTime: UInt64 = 0
+
+    init(appsOnly: Bool = false) {
+        self.appsOnly = appsOnly
+    }
 
     func start() {
         refresh()
@@ -90,7 +96,7 @@ final class ProcessList: ObservableObject {
     }
 
     private func apply() {
-        let sorted = raw.sorted { sort == .memory ? $0.memory > $1.memory : $0.cpu > $1.cpu }
+        let sorted = raw.filter { !appsOnly || $0.appPath != nil }.sorted { sort == .memory ? $0.memory > $1.memory : $0.cpu > $1.cpu }
         let top = Array(sorted.prefix(12))
         if top != processes { processes = top }
     }
@@ -99,7 +105,9 @@ final class ProcessList: ObservableObject {
     /// NSWorkspace documents runningApplications as safe to read from any thread.
     nonisolated private static func regularApps() -> [String: Int32] {
         var apps: [String: Int32] = [:]
-        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
+        // Finder always relaunches, so it isn't offered.
+        for app in NSWorkspace.shared.runningApplications
+        where app.activationPolicy == .regular && app.bundleIdentifier != "com.apple.finder" {
             if let path = app.bundleURL?.path { apps[path] = app.processIdentifier }
         }
         return apps

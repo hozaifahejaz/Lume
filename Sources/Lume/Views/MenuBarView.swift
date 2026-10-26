@@ -6,6 +6,7 @@ struct MenuBarView: View {
     @EnvironmentObject private var monitor: SystemMonitor
     @EnvironmentObject private var diskSpace: DiskSpace
     @Environment(\.openWindow) private var openWindow
+    @ObservedObject private var actions = QuickActions.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -25,6 +26,22 @@ struct MenuBarView: View {
             .fixedSize(horizontal: false, vertical: true)
             .padding(16)
             .glass(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Button(actions.running == .cleaning ? "Cleaning…" : "Quick Clean") { actions.quickClean() }
+                        .buttonStyle(PanelButtonStyle())
+                        .help("Clears caches and logs, keeping those of open apps")
+                    Button(actions.running == .freeingMemory ? "Freeing…" : "Free RAM…") { actions.freeRAM() }
+                        .buttonStyle(PanelButtonStyle())
+                        .help("Empties the file cache; asks for your password")
+                }
+                .disabled(actions.running != nil)
+                let result = [actions.cleanResult, actions.memoryResult].compactMap { $0 }.joined(separator: " · ")
+                if !result.isEmpty {
+                    Text(result).font(Theme.caption).foregroundStyle(Theme.secondary).lineLimit(1)
+                }
+            }
+            Hairline()
             HStack {
                 Button("Quit Lume") { NSApp.terminate(nil) }
                     .buttonStyle(PanelButtonStyle())

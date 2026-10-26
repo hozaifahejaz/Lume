@@ -2,6 +2,7 @@ import SwiftUI
 
 enum Page: String, CaseIterable, Identifiable {
     case overview = "Overview"
+    case memory = "Memory"
     case clean = "Clean"
     case storage = "Storage"
     case startup = "Startup"
@@ -11,6 +12,7 @@ enum Page: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .overview: return "gauge.with.dots.needle.33percent"
+        case .memory: return "memorychip"
         case .clean: return "sparkles"
         case .storage: return "internaldrive"
         case .startup: return "power"
@@ -35,10 +37,12 @@ final class Navigator: ObservableObject {
 
 struct RootView: View {
     @EnvironmentObject private var navigator: Navigator
-    @StateObject private var cleaner = Cleaner()
+    /// Shared with Quick Clean, which can run from the Dock or the menu bar with this window closed.
+    private let cleaner = QuickActions.shared.cleaner
     @StateObject private var storage = StorageScanner()
     @StateObject private var startup = StartupItems()
     @StateObject private var processes = ProcessList()
+    @StateObject private var memoryApps = ProcessList(appsOnly: true)
     @Namespace private var tabs
 
     var body: some View {
@@ -84,6 +88,7 @@ struct RootView: View {
     private func rescan() {
         switch navigator.page {
         case .overview: processes.refresh()
+        case .memory: memoryApps.refresh()
         case .clean:
             if cleaner.phase != .scanning && cleaner.phase != .cleaning { Task { await cleaner.scan() } }
         case .storage:
@@ -96,6 +101,7 @@ struct RootView: View {
     private func page(_ page: Page) -> some View {
         switch page {
         case .overview: OverviewView(processes: processes, goTo: { navigator.page = $0 })
+        case .memory: MemoryView(apps: memoryApps)
         case .clean: CleanView(cleaner: cleaner)
         case .storage: StorageView(scanner: storage)
         case .startup: StartupView(items: startup)

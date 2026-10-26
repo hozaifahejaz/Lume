@@ -15,6 +15,8 @@ struct LumeApp: App {
         let monitor = SystemMonitor()
         self.monitor = monitor
         meter = MenuBarMeter(monitor: monitor)
+        let diskSpace = monitor.diskSpace
+        QuickActions.shared.onCleaned = { diskSpace.refresh() }
     }
 
     var body: some Scene {
@@ -87,6 +89,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
+
+    /// Right-clicking the Dock icon offers the two quick actions.
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        let busy = MainActor.assumeIsolated { QuickActions.shared.running != nil }
+        for (title, action) in [("Quick Clean", #selector(quickClean)), ("Free RAM…", #selector(freeRAM))] {
+            let item = NSMenuItem(title: title, action: busy ? nil : action, keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    @objc private func quickClean() { MainActor.assumeIsolated { QuickActions.shared.quickClean() } }
+    @objc private func freeRAM() { MainActor.assumeIsolated { QuickActions.shared.freeRAM() } }
 
     /// Opening Lume again from Finder or the Dock with the window closed brings it back.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
