@@ -93,7 +93,9 @@ final class QuickActions: ObservableObject {
     /// Free plus speculative pages from vm_stat's output, in bytes; the same "free" the Memory page shows.
     nonisolated private static func freeBytes(_ vmStat: String) -> UInt64? {
         func value(_ label: String) -> UInt64? {
-            guard let line = vmStat.split(separator: "\n").first(where: { $0.hasPrefix(label) }) else { return nil }
+            // do shell script hands output back with \r line endings, so split on any newline.
+            guard let line = vmStat.split(whereSeparator: \.isNewline).first(where: { $0.hasPrefix(label) })
+            else { return nil }
             return UInt64(line.filter(\.isNumber))
         }
         guard let free = value("Pages free:"), let speculative = value("Pages speculative:") else { return nil }
