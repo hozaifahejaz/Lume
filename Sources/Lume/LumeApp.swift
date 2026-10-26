@@ -17,6 +17,8 @@ struct LumeApp: App {
         meter = MenuBarMeter(monitor: monitor)
         let diskSpace = monitor.diskSpace
         QuickActions.shared.onCleaned = { diskSpace.refresh() }
+        let navigator = navigator
+        Uninstaller.shared.onOpen = { navigator.show(.apps) }
     }
 
     var body: some Scene {
@@ -108,6 +110,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func quickClean() { MainActor.assumeIsolated { QuickActions.shared.quickClean() } }
     @objc private func freeRAM() { MainActor.assumeIsolated { QuickActions.shared.freeRAM() } }
+
+    /// An app dropped on the Dock icon opens in the uninstaller. Nothing is removed until Move to Trash.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let url = urls.first(where: { $0.pathExtension == "app" }) else { return }
+        MainActor.assumeIsolated {
+            Uninstaller.shared.load(url)
+            Uninstaller.shared.onOpen?()
+        }
+    }
 
     /// Opening Lume again from Finder or the Dock with the window closed brings it back.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

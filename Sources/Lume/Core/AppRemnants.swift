@@ -1,6 +1,35 @@
 import Foundation
 import AppKit
 
+/// An app bundle as the uninstaller sees it.
+struct AppInfo: Equatable {
+    let url: URL
+    let name: String
+    let bundleID: String
+    let version: String?
+
+    init?(url: URL) {
+        guard url.pathExtension == "app", let bundle = Bundle(url: url), let id = bundle.bundleIdentifier else { return nil }
+        self.url = url
+        bundleID = id
+        name = (bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+            ?? (bundle.object(forInfoDictionaryKey: "CFBundleName") as? String)
+            ?? url.deletingPathExtension().lastPathComponent
+        version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+    }
+
+    /// Apple's own apps and Lume are never removed here.
+    var refusal: String? {
+        if bundleID.hasPrefix("com.apple.") || url.path.hasPrefix("/System/") {
+            return "\(name) is part of macOS and can’t be removed."
+        }
+        if bundleID == Bundle.main.bundleIdentifier || bundleID == "app.lume.optimiser" {
+            return "Lume can’t remove itself. Drag it to the Trash from Applications instead."
+        }
+        return nil
+    }
+}
+
 /// The folders in ~/Library where apps keep their data, named the way Finder shows them.
 enum LibraryPlaces {
     static let all: [(folder: String, label: String)] = [
@@ -30,6 +59,146 @@ enum LibraryPlaces {
     static func looksLikeIdentifier(_ name: String) -> Bool {
         let parts = name.split(separator: ".")
         return parts.count >= 3 && parts.allSatisfy { !$0.isEmpty && !$0.contains(" ") }
+    }
+
+    /// The entries in each place named after `id` (or one of its helpers, "id.helper"), or exactly after the app's name.
+    static func entries(for id: String, name: String?) -> [(url: URL, label: String)] {
+        let fm = FileManager.default
+        var found: [(URL, String)] = []
+        for place in all {
+            let folder = url(place.folder)
+            guard let names = try? fm.contentsOfDirectory(atPath: folder.path) else { continue }
+            for entry in names {
+                let entryID = identifier(of: entry)
+                let byID = entryID == id || entryID.hasPrefix(id + ".")
+                // Folders named after the app itself, such as "Application Support/Slack".
+                let byName = name.map { entry == $0 && place.folder != "Preferences" } ?? false
+                if byID || byName { found.append((folder.appending(path: entry), place.label)) }
+            }
+        }
+        return found
+    }
+}
+
+/// One app's bundle and its files in ~/Library, with Move to Trash for the ones ticked.
+@MainActor
+final class Uninstaller: ObservableObject {
+    /// Shared, so an app dropped on the Dock icon arrives on the Apps page.
+    static let shared = Uninstaller()
+    /// Called when an app arrives from outside the window; shows the Apps page.
+    var onOpen: (() -> Void)?
+
+    @Published private(set) var app: AppInfo?
+    @Published private(set) var files: [SweepFile] = []
+    /// Where each file lives ("Caches"), keyed by its URL; the app itself has none.
+    private(set) var places: [URL: String] = [:]
+    @Published var selected: Set<URL> = []
+    @Published private(set) var isWorking = false
+    /// Why an app can't be removed, or the outcome of removing it.
+    @Published private(set) var message: String?
+
+    var selectedSize: Int64 { files.filter { selected.contains($0.url) }.reduce(0) { $0 + $1.size } }
+
+    func place(of file: SweepFile) -> String? { places[file.url] }
+
+    /// Shows an app and finds its files. Apple's apps and Lume are refused straight away.
+    func load(_ url: URL) {
+        guard let info = AppInfo(url: url) else {
+            message = "That isn’t an app Lume can read."
+            return
+        }
+        app = info
+        files = []
+        selected = []
+        message = info.refusal
+        guard info.refusal == nil else { return }
+        isWorking = true
+        Task {
+            let (files, places) = await Task.detached(priority: .userInitiated) { Self.measure(info) }.value
+            guard app == info else { return }
+            self.places = places
+            self.files = files
+            selected = Set(files.map(\.url))
+            isWorking = false
+        }
+    }
+
+    func clear() {
+        app = nil
+        files = []
+        selected = []
+        message = nil
+    }
+
+    func chooseApp() {
+        let panel = NSOpenPanel()
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.allowedContentTypes = [.applicationBundle]
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Choose"
+        panel.message = "Choose an app to remove along with its files."
+        if panel.runModal() == .OK, let url = panel.url { load(url) }
+    }
+
+    /// Quits the app politely if it's open, then moves the ticked items to the Trash.
+    func trashSelected() async {
+        guard let app, app.refusal == nil else { return }
+        let targets = files.filter { selected.contains($0.url) }
+        guard !targets.isEmpty else { return }
+        isWorking = true
+        defer { isWorking = false }
+
+        let running = NSRunningApplication.runningApplications(withBundleIdentifier: app.bundleID)
+        if !running.isEmpty {
+            running.forEach { $0.terminate() }
+            // Up to five seconds for it to save and close.
+            for _ in 0..<50 where running.contains(where: { !$0.isTerminated }) {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            if running.contains(where: { !$0.isTerminated }) {
+                message = "\(app.name) is still open. Quit it, then try again."
+                return
+            }
+        }
+
+        let moved = await Task.detached(priority: .userInitiated) {
+            targets.filter { (try? FileManager.default.trashItem(at: $0.url, resultingItemURL: nil)) != nil }
+        }.value
+        let movedURLs = Set(moved.map(\.url))
+        files.removeAll { movedURLs.contains($0.url) }
+        selected.subtract(movedURLs)
+        let size = moved.reduce(0) { $0 + $1.size }
+        if moved.count == targets.count {
+            let fileCount = moved.count - (movedURLs.contains(app.url) ? 1 : 0)
+            var what = fileCount == 1 ? "1 file" : "\(fileCount) files"
+            if movedURLs.contains(app.url) { what = fileCount == 0 ? app.name : "\(app.name) and " + what }
+            message = "Moved \(what) (\(size.bytes)) to the Trash."
+            if movedURLs.contains(app.url) {
+                // Gone: back to the drop zone, which keeps the message.
+                self.app = nil
+                files = []
+            }
+        } else if moved.isEmpty {
+            message = "Couldn’t move \(app.name) to the Trash. It may need an administrator; try Finder."
+        } else {
+            message = "Moved \(moved.count) of \(targets.count) items to the Trash; the rest couldn’t be moved."
+        }
+    }
+
+    nonisolated private static func measure(_ app: AppInfo) -> ([SweepFile], [URL: String]) {
+        var files = [SweepFile(url: app.url, size: DiskSize.of(app.url), date: nil)]
+        var places: [URL: String] = [:]
+        for (url, label) in LibraryPlaces.entries(for: app.bundleID, name: app.name) {
+            let size = DiskSize.of(url) + fileSize(url)
+            files.append(SweepFile(url: url, size: size, date: nil))
+            places[url] = label
+        }
+        return (files, places)
+    }
+
+    nonisolated static func fileSize(_ url: URL) -> Int64 {
+        let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .totalFileAllocatedSizeKey])
+        return values?.isRegularFile == true ? Int64(values?.totalFileAllocatedSize ?? 0) : 0
     }
 }
 
@@ -111,17 +280,12 @@ final class Leftovers: ObservableObject {
         return byID.compactMap { id, entry -> Leftover? in
             // Still registered with LaunchServices means an app with this identifier exists somewhere.
             guard NSWorkspace.shared.urlsForApplications(withBundleIdentifier: id).isEmpty else { return nil }
-            let size = entry.urls.reduce(0) { $0 + DiskSize.of($1) + fileSize($1) }
+            let size = entry.urls.reduce(0) { $0 + DiskSize.of($1) + Uninstaller.fileSize($1) }
             var places: [String] = []
             for place in entry.places where !places.contains(place) { places.append(place) }
             return Leftover(id: id, urls: entry.urls, places: places, size: size)
         }
         .sorted { $0.size > $1.size }
-    }
-
-    nonisolated private static func fileSize(_ url: URL) -> Int64 {
-        let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .totalFileAllocatedSizeKey])
-        return values?.isRegularFile == true ? Int64(values?.totalFileAllocatedSize ?? 0) : 0
     }
 
     /// "com.vendor" from "com.vendor.app.helper".

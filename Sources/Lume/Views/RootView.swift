@@ -56,6 +56,7 @@ struct RootView: View {
     @StateObject private var largeFiles = FileSweep(kind: .largeOld)
     @StateObject private var downloads = FileSweep(kind: .oldDownloads)
     @StateObject private var leftovers = Leftovers()
+    private let uninstaller = Uninstaller.shared
     @StateObject private var storageMode = ViewState(StorageMode.folders)
     @Namespace private var tabs
     @Environment(\.openSettings) private var openSettings
@@ -158,7 +159,7 @@ struct RootView: View {
         case .memory: MemoryView(apps: memoryApps)
         case .clean: CleanView(cleaner: cleaner)
         case .storage: StorageView(scanner: storage, largeFiles: largeFiles, downloads: downloads, mode: storageMode)
-        case .apps: AppsView(leftovers: leftovers)
+        case .apps: AppsView(uninstaller: uninstaller, leftovers: leftovers)
         case .startup: StartupView(items: startup)
         }
     }
