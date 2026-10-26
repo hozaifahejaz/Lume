@@ -95,13 +95,14 @@ final class FileSweep: ObservableObject {
             let items: [URL] = (try? top.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
                 ? [top] : enumerator.compactMap { $0 as? URL }
             for url in items {
-                guard let values = try? url.resourceValues(forKeys: Set(keys)), values.isRegularFile == true,
-                      Int64(values.fileSize ?? 0) >= largeThreshold else { continue }
+                // Space actually taken on disk, so a sparse disk image doesn't read as 64 GB it never used.
+                guard let values = try? url.resourceValues(forKeys: Set(keys)), values.isRegularFile == true else { continue }
+                let size = Int64(values.totalFileAllocatedSize ?? values.fileSize ?? 0)
+                guard size >= largeThreshold else { continue }
                 // Spotlight remembers when a file was last opened; a file never opened falls back to its last change.
                 let used = lastUsed(url) ?? values.contentModificationDate
                 guard let used, used < cutoff else { continue }
-                let size = Int64(values.totalFileAllocatedSize ?? values.fileSize ?? 0)
-                found.append(SweepFile(url: url, size: max(size, Int64(values.fileSize ?? 0)), date: used))
+                found.append(SweepFile(url: url, size: size, date: used))
             }
         }
         return found.sorted { $0.size > $1.size }
