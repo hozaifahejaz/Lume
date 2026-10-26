@@ -42,7 +42,12 @@ private struct MemoryHeader: View {
             Button {
                 actions.freeRAM()
             } label: {
-                Label(actions.running == .freeingMemory ? "Freeing…" : "Free RAM…", systemImage: "memorychip")
+                if actions.running == .freeingMemory {
+                    // A quiet spinner in place of the icon while macOS asks for the password and purges.
+                    Label { Text("Freeing…") } icon: { ProgressView().controlSize(.small) }
+                } else {
+                    Label("Free RAM…", systemImage: "memorychip")
+                }
             }
             .glassButton()
             .disabled(actions.running != nil)
@@ -58,8 +63,9 @@ private struct MemoryHeader: View {
         }
     }
 
+    /// "Memory used" is Activity Monitor's own term for app, wired and compressed memory together.
     private var subtitle: String {
-        "\(monitor.memory.used.bytes) of \(monitor.memory.total.bytes) in use. "
+        "Memory used \(monitor.memory.used.bytes) of \(monitor.memory.total.bytes). "
             + "macOS keeps memory full on purpose and frees it the moment it’s needed."
     }
 }
@@ -80,7 +86,7 @@ private struct MemoryBreakdown: View {
         let memory = monitor.memory
         let parts = [
             Part(id: "App memory", caption: "Open apps and their data", bytes: memory.app, color: Theme.storageTones[0]),
-            Part(id: "Wired", caption: "Held by macOS itself", bytes: memory.wired, color: Theme.storageTones[1]),
+            Part(id: "Wired memory", caption: "Held by macOS itself", bytes: memory.wired, color: Theme.storageTones[1]),
             Part(id: "Compressed", caption: "Squeezed to make room", bytes: memory.compressed, color: Theme.storageTones[2]),
             Part(id: "Cached files", caption: "Given back when needed", bytes: memory.cached, color: Theme.storageOther),
         ]
@@ -115,10 +121,12 @@ private struct MemoryBreakdown: View {
                         .font(Theme.caption)
                         .foregroundStyle(Theme.secondary)
                     Spacer()
+                    // The last Free RAM result in place of the note, in the darker caption colour.
                     Text(actions.memoryResult ?? "Free RAM empties the file cache. It rarely makes a Mac faster.")
                         .font(Theme.caption)
-                        .foregroundStyle(Theme.tertiary)
+                        .foregroundStyle(actions.memoryResult == nil ? Theme.tertiary : Theme.secondary)
                         .lineLimit(1)
+                        .contentTransition(.opacity)
                 }
             }
         }
