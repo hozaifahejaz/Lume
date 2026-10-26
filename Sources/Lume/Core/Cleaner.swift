@@ -89,8 +89,10 @@ final class Cleaner: ObservableObject {
         all.filter { $0.group == .general || (sizes[$0.id] != nil && !missing.contains($0.id)) }
     }
 
-    var selectedTotal: Int64 {
-        selected.subtracting(missing).subtracting(unreadable).reduce(0) { $0 + (sizes[$1] ?? 0) }
+    var selectedTotal: Int64 { total(of: selected) }
+
+    private func total(of ids: Set<String>) -> Int64 {
+        ids.subtracting(missing).subtracting(unreadable).reduce(0) { $0 + (sizes[$1] ?? 0) }
     }
 
     /// Everything that could be cleared, selected or not.
@@ -160,19 +162,19 @@ final class Cleaner: ObservableObject {
     /// Caches of open apps are kept as always. Returns the bytes freed, or nil when Clean is already busy.
     func quickClean() async -> Int64? {
         guard phase != .scanning && phase != .cleaning else { return nil }
-        let chosen = selected
-        selected = Set(all.filter(\.onByDefault).map(\.id))
         phase = .scanning
         await measure()
-        await clean()
-        selected = chosen
+        // The defaults, not the switches on the Clean page, which stay as the person left them.
+        await clean(Set(all.filter(\.onByDefault).map(\.id)))
         if case .done(let freed) = phase { return freed }
         return 0
     }
 
-    func clean() async {
-        let targets = all.filter { selected.contains($0.id) && !unreadable.contains($0.id) && !missing.contains($0.id) }
-        let before = selectedTotal
+    func clean() async { await clean(selected) }
+
+    private func clean(_ ids: Set<String>) async {
+        let targets = all.filter { ids.contains($0.id) && !unreadable.contains($0.id) && !missing.contains($0.id) }
+        let before = total(of: ids)
         let keep = Self.openAppIdentifiers()
         phase = .cleaning
         await Task.detached(priority: .userInitiated) {
@@ -182,7 +184,7 @@ final class Cleaner: ObservableObject {
         }.value
         // Quietly, so the headline stays on "Cleaning…" instead of flashing back to scanning.
         await measure()
-        let freed = max(0, before - selectedTotal)
+        let freed = max(0, before - total(of: ids))
         record(freed)
         phase = .done(freed: freed)
     }
