@@ -140,21 +140,21 @@ private struct FreeRAMCard: View {
 
     var body: some View {
         GlassPanel {
-            VStack(spacing: 12) {
+            VStack(spacing: 8) {
                 Spacer(minLength: 0)
                 Button { actions.freeRAM() } label: {
                     ZStack {
                         Circle().stroke(Theme.accent.opacity(hovering.value && enabled ? 0.35 : 0.15), lineWidth: 3)
-                            .frame(width: 92, height: 92)
+                            .frame(width: 80, height: 80)
                         Circle()
                             .fill(Theme.accent)
-                            .frame(width: 76, height: 76)
+                            .frame(width: 66, height: 66)
                             .shadow(color: Theme.accent.opacity(0.3), radius: 10, y: 4)
                         if busy {
                             ProgressView().controlSize(.small).tint(.white)
                         } else {
                             Image(systemName: "memorychip")
-                                .font(.system(size: 26, weight: .medium))
+                                .font(.system(size: 23, weight: .medium))
                                 .foregroundStyle(.white)
                         }
                     }
