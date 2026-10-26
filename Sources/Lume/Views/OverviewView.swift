@@ -55,9 +55,9 @@ private struct OverviewHeader: View {
 
     private var headline: String {
         switch monitor.load {
-        case .smooth: return "Running smoothly"
-        case .busy: return "Busy"
-        case .heavy: return "Under heavy load"
+        case .smooth: return "Your Mac is running smoothly"
+        case .busy: return "Your Mac is busy"
+        case .heavy: return "Your Mac is under heavy load"
         }
     }
 
