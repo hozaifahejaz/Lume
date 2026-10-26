@@ -4,14 +4,17 @@ import AppKit
 @main
 struct LumeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var monitor: SystemMonitor
-    @StateObject private var meter: MenuBarMeter
-    @StateObject private var navigator = Navigator()
+    // Plain constants, not @StateObject: the App would otherwise observe them, and every sample
+    // (or tab change) would re-evaluate the whole scene, rebuilding the main menu and the menu bar item.
+    // The views that show their values observe them instead.
+    private let monitor: SystemMonitor
+    private let meter: MenuBarMeter
+    private let navigator = Navigator()
 
     init() {
         let monitor = SystemMonitor()
-        _monitor = StateObject(wrappedValue: monitor)
-        _meter = StateObject(wrappedValue: MenuBarMeter(monitor: monitor))
+        self.monitor = monitor
+        meter = MenuBarMeter(monitor: monitor)
     }
 
     var body: some Scene {
@@ -65,16 +68,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.applicationIconImage = icon
         }
         NSApp.activate(ignoringOtherApps: true)
+
+        // Closing the last window leaves Lume running in the menu bar alone, without a Dock icon;
+        // a window appearing again (the main one or Settings) brings the Dock icon back.
+        let center = NotificationCenter.default
+        for name in [NSWindow.willCloseNotification, NSWindow.didMiniaturizeNotification] {
+            center.addObserver(forName: name, object: nil, queue: .main) { _ in
+                // Let the closing window finish leaving before looking.
+                DispatchQueue.main.async { MainActor.assumeIsolated { Dock.update() } }
+            }
+        }
+        center.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { Dock.update() }
+        }
     }
 
+    /// Lume keeps running in the menu bar after its window closes; Quit (⌘Q, the Dock or the panel) ends it.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
 
-    /// Clicking the Dock icon with the window closed brings it back.
+    /// Opening Lume again from Finder or the Dock with the window closed brings it back.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag { MainWindow.open() }
         return true
+    }
+}
+
+/// Shows the Dock icon only while Lume has a window of its own open (or in the Dock, minimised).
+@MainActor
+enum Dock {
+    /// The main window and Settings; the menu bar panel and the status item are panels and don't count.
+    private static var hasAppWindow: Bool {
+        NSApp.windows.contains { window in
+            window.styleMask.contains(.titled) && !(window is NSPanel)
+                && (window.isVisible || window.isMiniaturized)
+        }
+    }
+
+    static func update() {
+        let policy: NSApplication.ActivationPolicy = hasAppWindow ? .regular : .accessory
+        guard NSApp.activationPolicy() != policy else { return }
+        NSApp.setActivationPolicy(policy)
+    }
+
+    /// Before a window opens, so it arrives with the Dock icon and the menus already in place.
+    static func show() {
+        if NSApp.activationPolicy() != .regular { NSApp.setActivationPolicy(.regular) }
     }
 }
 
@@ -83,11 +123,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 enum MainWindow {
     static var openAction: OpenWindowAction?
 
+    private static var window: NSWindow? {
+        NSApp.windows.first { $0.identifier?.rawValue.hasPrefix("main") == true }
+    }
+
+    /// True while some part of the main window can be seen.
+    static var isOnScreen: Bool {
+        guard let window else { return false }
+        return window.isVisible && window.occlusionState.contains(.visible)
+    }
+
     static func open() {
+        Dock.show()
         if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
-        // Already open: just bring it forward. openWindow rebuilds the scene list and menus each call,
+        // Already there: just bring it forward. openWindow rebuilds the scene list and menus each call,
         // which made every ⌘1–4 press do a few milliseconds of needless work.
-        if let window = NSApp.windows.first(where: { $0.identifier?.rawValue.hasPrefix("main") == true && $0.isVisible }) {
+        // A closed window is kept alive, so it can come straight back too. Ordering it in right away
+        // also means the Dock icon stays when the menu bar panel's own closing is noticed a moment later.
+        if let window {
             if window.isMiniaturized { window.deminiaturize(nil) }
             if !window.isKeyWindow { window.makeKeyAndOrderFront(nil) }
             return

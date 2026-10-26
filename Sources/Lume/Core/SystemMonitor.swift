@@ -16,6 +16,14 @@ final class SystemMonitor: ObservableObject {
     private var timer: Timer?
     private var previousTicks: [CPUTicks] = []
     private var interval: TimeInterval = 0
+    /// The latest reading, kept even while nobody is watching; the menu bar meter reads it from here.
+    private(set) var latestCPU: Double = 0
+    private(set) var latestMemory = MemoryStats()
+    private var latestPressure: Pressure = .normal
+    private var latestHistory: [Double] = Array(repeating: 0, count: 60)
+    /// With every window closed, a closed window's views are still alive and would lay out on each
+    /// published change, so readings are only published while a window or the panel is on screen.
+    private var watched = true
     private var observers: [NSObjectProtocol] = []
 
     init() {
@@ -44,6 +52,8 @@ final class SystemMonitor: ObservableObject {
                 // The status item's own window is always on screen; it doesn't count as someone watching.
                 && !window.className.contains("StatusBarWindow")
         }
+        self.watched = watched
+        if watched { publish() }
         schedule(every: watched ? 1 : 5)
     }
 
@@ -71,19 +81,22 @@ final class SystemMonitor: ObservableObject {
                 busy += b
                 total += b + Double(now.idle &- before.idle)
             }
-            let value = total > 0 ? busy / total : 0
-            if value != cpu { cpu = value }
-            var history = cpuHistory
-            history.removeFirst()
-            history.append(value)
-            if history != cpuHistory { cpuHistory = history }
+            latestCPU = total > 0 ? busy / total : 0
+            latestHistory.removeFirst()
+            latestHistory.append(latestCPU)
         }
         previousTicks = ticks
-        // Assign only what moved, so an unchanged reading doesn't redraw anything.
-        let memory = Self.readMemory()
-        if memory != self.memory { self.memory = memory }
-        let pressure = Self.readPressure()
-        if pressure != self.pressure { self.pressure = pressure }
+        latestMemory = Self.readMemory()
+        latestPressure = Self.readPressure()
+        if watched { publish() }
+    }
+
+    /// Assigns only what moved, so an unchanged reading doesn't redraw anything.
+    private func publish() {
+        if latestCPU != cpu { cpu = latestCPU }
+        if latestHistory != cpuHistory { cpuHistory = latestHistory }
+        if latestMemory != memory { memory = latestMemory }
+        if latestPressure != pressure { pressure = latestPressure }
     }
 
     // MARK: CPU

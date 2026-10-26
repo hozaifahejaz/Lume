@@ -39,7 +39,11 @@ final class ProcessList: ObservableObject {
         refresh()
         timer?.invalidate()
         let timer = Timer(timeInterval: 3, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
+            Task { @MainActor in
+                // A closed window keeps its views alive, so onDisappear never stops this; skip while unseen.
+                guard MainWindow.isOnScreen else { return }
+                self?.refresh()
+            }
         }
         // .common keeps it ticking while a menu is open.
         RunLoop.main.add(timer, forMode: .common)
