@@ -22,6 +22,7 @@ final class QuickActions: ObservableObject {
     func quickClean() {
         guard running == nil else { return }
         running = .cleaning
+        cleanResult = nil
         Task {
             let freed = await cleaner.quickClean()
             running = nil
@@ -38,14 +39,17 @@ final class QuickActions: ObservableObject {
     func freeRAM() {
         guard running == nil else { return }
         running = .freeingMemory
+        memoryResult = nil
         Task {
-            let before = SystemMonitor.readMemory().free
+            // Read just before and just after purge itself, so the time spent at the password prompt
+            // doesn't count other apps' comings and goings as freed.
             let outcome = await Task.detached(priority: .userInitiated) { Self.purge() }.value
             running = nil
             switch outcome {
-            case .done:
-                let after = SystemMonitor.readMemory().free
-                let text = "Free memory \(before.bytes) → \(after.bytes)"
+            case .done(let before, let after):
+                let freed = Int64(clamping: after) - Int64(clamping: before)
+                // Under 50 MB is within the noise of everything else that's running.
+                let text = freed >= 50_000_000 ? "Freed \(freed.bytes)" : "Nothing to free"
                 memoryResult = text
                 Self.notify(title: "Free RAM", body: text)
             case .cancelled:
@@ -56,25 +60,50 @@ final class QuickActions: ObservableObject {
         }
     }
 
-    enum Outcome: Sendable { case done, cancelled, failed }
+    /// Free memory in bytes before and after.
+    enum Outcome: Sendable { case done(before: UInt64, after: UInt64), cancelled, failed }
 
+    /// The password prompt and purge run in one shell: vm_stat is read on both sides of purge,
+    /// once the password has been given.
     nonisolated private static func purge() -> Outcome {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        task.arguments = ["-e", "do shell script \"/usr/sbin/purge\" with administrator privileges"]
+        let script = "/usr/bin/vm_stat; /usr/sbin/purge; echo ---; /usr/bin/vm_stat"
+        task.arguments = ["-e", "do shell script \"\(script)\" with administrator privileges"]
+        let output = Pipe()
         let errors = Pipe()
-        task.standardOutput = FileHandle.nullDevice
+        task.standardOutput = output
         task.standardError = errors
         do { try task.run() } catch { return .failed }
-        let message = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        // Small outputs, read after exit without risk of filling the pipes.
         task.waitUntilExit()
-        if task.terminationStatus == 0 { return .done }
-        // -128 is "User canceled" from the password prompt.
-        return message.contains("-128") ? .cancelled : .failed
+        let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        let message = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        guard task.terminationStatus == 0 else {
+            // -128 is "User canceled" from the password prompt.
+            return message.contains("-128") ? .cancelled : .failed
+        }
+        let halves = text.components(separatedBy: "---")
+        guard halves.count == 2, let before = freeBytes(halves[0]), let after = freeBytes(halves[1]) else {
+            return .failed
+        }
+        return .done(before: before, after: after)
+    }
+
+    /// Free plus speculative pages from vm_stat's output, in bytes; the same "free" the Memory page shows.
+    nonisolated private static func freeBytes(_ vmStat: String) -> UInt64? {
+        func value(_ label: String) -> UInt64? {
+            guard let line = vmStat.split(separator: "\n").first(where: { $0.hasPrefix(label) }) else { return nil }
+            return UInt64(line.filter(\.isNumber))
+        }
+        guard let free = value("Pages free:"), let speculative = value("Pages speculative:") else { return nil }
+        return (free + speculative) * UInt64(vm_kernel_page_size)
     }
 
     /// A banner with the result, for actions started from the Dock or the menu bar with no window open.
+    /// With the window on screen the result is already shown there.
     private static func notify(title: String, body: String) {
+        guard !MainWindow.isOnScreen else { return }
         // Only a real app bundle can post notifications; `swift run` can't.
         guard Bundle.main.bundleIdentifier != nil, Bundle.main.bundlePath.hasSuffix(".app") else { return }
         let center = UNUserNotificationCenter.current()
