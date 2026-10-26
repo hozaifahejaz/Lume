@@ -173,10 +173,11 @@ struct Backdrop: View {
     }
 }
 
-/// Page headline: a calm sentence in large light type with one quiet line beneath.
+/// Page headline in large light type, with one line of figures beneath. The line keeps its height
+/// when empty, so every page's content starts at the same place.
 struct PageHeader<Trailing: View>: View {
     let title: String
-    let subtitle: String
+    var subtitle: String = ""
     @ViewBuilder var trailing: Trailing
 
     var body: some View {
@@ -186,7 +187,7 @@ struct PageHeader<Trailing: View>: View {
                     .font(Theme.headline)
                     .foregroundStyle(Theme.ink)
                     .contentTransition(.opacity)
-                Text(subtitle)
+                Text(subtitle.isEmpty ? " " : subtitle)
                     .font(Theme.body)
                     .foregroundStyle(Theme.secondary)
                     .contentTransition(.opacity)
@@ -199,7 +200,7 @@ struct PageHeader<Trailing: View>: View {
 }
 
 extension PageHeader where Trailing == EmptyView {
-    init(title: String, subtitle: String) {
+    init(title: String, subtitle: String = "") {
         self.init(title: title, subtitle: subtitle) { EmptyView() }
     }
 }

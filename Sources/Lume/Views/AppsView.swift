@@ -8,8 +8,7 @@ struct AppsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.gap) {
-            PageHeader(title: "Remove apps completely.",
-                       subtitle: "An app’s files in your Library go with it, to the Trash, so they can be put back.") {
+            PageHeader(title: "Apps") {
                 Button("Choose App…") { uninstaller.chooseApp() }
                     .glassButton()
             }
@@ -51,9 +50,6 @@ private struct UninstallPanel: View {
                 .font(.system(size: 34, weight: .light))
                 .foregroundStyle(targeted.value ? Theme.accent : Theme.tertiary)
             Text("Drop an app here").font(Theme.sectionTitle).foregroundStyle(Theme.ink)
-            Text("or on Lume in the Dock, or use Choose App.")
-                .font(Theme.caption)
-                .foregroundStyle(Theme.secondary)
             if let message = uninstaller.message {
                 Text(message).font(Theme.caption).foregroundStyle(Theme.secondary).padding(.top, 4)
             }
@@ -116,7 +112,7 @@ private struct UninstallPanel: View {
         .confirmationDialog("Move \(app.name) and its files to the Trash?", isPresented: $confirming.value) {
             Button("Move to Trash", role: .destructive) { Task { await uninstaller.trashSelected() } }
         } message: {
-            Text("If \(app.name) is open, Lume asks it to quit first.")
+            Text("\(app.name) quits first if it’s open.")
         }
     }
 
@@ -190,7 +186,8 @@ private struct LeftoversPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Left behind by deleted apps").font(Theme.sectionTitle).foregroundStyle(Theme.ink)
+                Text("Leftovers").font(Theme.sectionTitle).foregroundStyle(Theme.ink)
+                    .help("Data from apps no longer on this Mac, untouched for a month")
                 Spacer()
                 if leftovers.isScanning { ProgressView().controlSize(.small) }
             }
@@ -198,7 +195,7 @@ private struct LeftoversPanel: View {
             .frame(height: 24)
 
             if leftovers.items.isEmpty {
-                Text(leftovers.scanned ? "Nothing left behind by apps you’ve deleted." : "Looking…")
+                Text(leftovers.scanned ? "Nothing found" : "Looking…")
                     .font(Theme.body)
                     .foregroundStyle(Theme.secondary)
                     .padding(8)
@@ -235,8 +232,7 @@ private struct LeftoversPanel: View {
         if !leftovers.selected.isEmpty {
             return "\(leftovers.selected.count) selected · \(leftovers.selectedSize.bytes)"
         }
-        if let result = leftovers.result { return result }
-        return "Only data no app on this Mac uses, untouched for a month."
+        return leftovers.result ?? ""
     }
 
     private func row(_ item: Leftover, first: Bool) -> some View {

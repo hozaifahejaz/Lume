@@ -4,8 +4,6 @@ import AppKit
 /// Files with a checkbox each, and Move to Trash for the ones ticked. Scrolls inside its panel when long.
 struct SweepList: View {
     @ObservedObject var sweep: FileSweep
-    /// Shown when the scan found nothing.
-    let empty: String
     /// A quiet line after the name, such as "Last opened 8 months ago".
     let caption: (SweepFile) -> String
 
@@ -14,7 +12,7 @@ struct SweepList: View {
             if sweep.files.isEmpty {
                 HStack(spacing: 8) {
                     if sweep.isScanning || !sweep.scanned { ProgressView().controlSize(.small) }
-                    Text(sweep.isScanning || !sweep.scanned ? "Looking…" : empty)
+                    Text(sweep.isScanning || !sweep.scanned ? "Looking…" : "Nothing found")
                         .font(Theme.body)
                         .foregroundStyle(Theme.secondary)
                 }
@@ -43,8 +41,6 @@ struct SweepList: View {
                     Text("\(sweep.selected.count) selected · \(sweep.selectedSize.bytes)")
                 } else if let result = sweep.result {
                     Text(result)
-                } else if !sweep.files.isEmpty {
-                    Text("Tick what you no longer need. Everything goes to the Trash, so it can be put back.")
                 }
             }
             .font(Theme.caption)

@@ -12,8 +12,7 @@ struct CleanView: View {
         let developer = cleaner.categories.filter { $0.group == .developer }
 
         VStack(alignment: .leading, spacing: Theme.gap) {
-            PageHeader(title: headline,
-                       subtitle: "Caches and logs your Mac and apps recreate on their own when they need them.")
+            PageHeader(title: headline)
 
             HStack(alignment: .top, spacing: Theme.gap) {
                 GlassPanel {
@@ -31,8 +30,7 @@ struct CleanView: View {
                             }
                         }
                         if !cleaner.unreadable.isEmpty {
-                            Label("Locked folders need Full Disk Access in System Settings › Privacy & Security.",
-                                  systemImage: "lock")
+                            Label("Some folders need Full Disk Access.", systemImage: "lock")
                                 .font(Theme.caption)
                                 .foregroundStyle(Theme.tertiary)
                                 .padding(.horizontal, 8)
@@ -52,11 +50,6 @@ struct CleanView: View {
                             .lineLimit(1)
                             .minimumScaleFactor(0.6)
                         action.padding(.top, 20)
-                        Text(footnote)
-                            .font(Theme.caption)
-                            .foregroundStyle(Theme.tertiary)
-                            .multilineTextAlignment(.center)
-                            .padding(.top, 4)
                         Spacer(minLength: 0)
                         if let tally {
                             Text(tally)
@@ -98,8 +91,6 @@ struct CleanView: View {
         }
         .confirmationDialog("Clean \(cleaner.selectedTotal.bytes)?", isPresented: $confirming.value) {
             Button("Clean", role: .destructive) { Task { await cleaner.clean() } }
-        } message: {
-            Text("Your Mac and apps recreate these files when they need them.")
         }
     }
 
@@ -136,21 +127,17 @@ struct CleanView: View {
 
     private var headline: String {
         switch cleaner.phase {
-        case .idle, .scanning: return "Looking for files to clear…"
+        case .idle, .scanning: return "Scanning…"
         case .cleaning: return "Cleaning…"
-        case .done(let freed): return freed > 0 ? "Freed \(freed.bytes)." : "Nothing more to clear."
+        case .done(let freed): return freed > 0 ? "Freed \(freed.bytes)" : "Nothing to clear"
         case .ready:
             // Everything found; the big number on the right is what's selected of it.
             let total = cleaner.foundTotal
-            return total > 0 ? "\(total.bytes) found." : "Nothing to clear right now."
+            return total > 0 ? "\(total.bytes) found" : "Nothing to clear"
         }
     }
 
     private var eyebrow: String { isDone ? "Freed" : "Selected" }
-
-    private var footnote: String {
-        isDone ? "Your Mac rebuilds what it needs, when it needs it." : "Press and hold, or press ⌘⌫."
-    }
 
     private var bigNumber: String {
         isDone ? shownFreed.value.bytes : cleaner.selectedTotal.bytes
@@ -161,7 +148,7 @@ struct CleanView: View {
         guard cleaner.lifetimeFreed > 0, let since = cleaner.tallySince else { return nil }
         let sameYear = Calendar.current.isDate(since, equalTo: Date(), toGranularity: .year)
         let month = since.formatted(sameYear ? .dateTime.month(.wide) : .dateTime.month(.wide).year())
-        return "Lume has freed \(cleaner.lifetimeFreed.bytes) since \(month)."
+        return "\(cleaner.lifetimeFreed.bytes) freed since \(month)"
     }
 
     @ViewBuilder private var action: some View {
@@ -175,6 +162,7 @@ struct CleanView: View {
             HoldButton(enabled: canClean, busy: cleaner.phase != .ready) {
                 Task { await cleaner.clean() }
             }
+            .help("Press and hold, or press ⌘⌫")
         }
     }
 
@@ -190,19 +178,7 @@ struct CleanView: View {
         return HStack(spacing: 12) {
             IconTile(symbol: category.symbol, size: compact ? 24 : Theme.tileSize)
                 .frame(width: Theme.tileSize)
-            if compact {
-                // One line: developer rows stay short so the panel never needs to scroll.
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(category.name).font(Theme.body.weight(.medium)).foregroundStyle(Theme.ink)
-                    Text(category.detail).font(Theme.caption).foregroundStyle(Theme.secondary)
-                }
-                .lineLimit(1)
-            } else {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(category.name).font(Theme.body.weight(.medium)).foregroundStyle(Theme.ink)
-                    Text(category.detail).font(Theme.caption).foregroundStyle(Theme.secondary)
-                }
-            }
+            Text(category.name).font(Theme.body.weight(.medium)).foregroundStyle(Theme.ink).lineLimit(1)
             Spacer(minLength: 12)
             if missing {
                 Text("Not found")
@@ -228,9 +204,10 @@ struct CleanView: View {
                 .disabled(locked || missing)
                 .accessibilityLabel(category.name)
         }
-        .frame(height: compact ? 36 : 52)
+        .frame(height: compact ? 36 : 44)
         .opacity(locked || missing ? 0.6 : 1)
         .hoverWash()
+        .help(category.detail)
     }
 }
 

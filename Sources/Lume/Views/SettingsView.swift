@@ -45,33 +45,30 @@ struct SettingsView: View {
 
             GlassPanel(fill: false) {
                 VStack(alignment: .leading, spacing: 6) {
-                    row("Quick Clean weekly") {
+                    row("Quick Clean weekly", help: "Clears caches and logs once a week") {
                         Toggle("Quick Clean weekly", isOn: $weekly)
                             .toggleStyle(.switch)
                             .controlSize(.small)
                             .labelsHidden()
                             .tint(Theme.graphite)
                     }
-                    Text(weeklyNote)
-                        .font(Theme.caption)
-                        .foregroundStyle(Theme.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if let lastRun {
+                        Text(lastRun)
+                            .font(Theme.caption)
+                            .foregroundStyle(Theme.secondary)
+                    }
                 }
             }
 
             GlassPanel(fill: false) {
                 VStack(alignment: .leading, spacing: 6) {
-                    row("Alerts") {
+                    row("Alerts", help: "When the disk is nearly full, or memory pressure stays high; at most once a day each") {
                         Toggle("Alerts", isOn: $alerts)
                             .toggleStyle(.switch)
                             .controlSize(.small)
                             .labelsHidden()
                             .tint(Theme.graphite)
                     }
-                    Text("When the disk is nearly full, or memory pressure stays high. At most once a day each.")
-                        .font(Theme.caption)
-                        .foregroundStyle(Theme.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
@@ -102,18 +99,16 @@ struct SettingsView: View {
         .onAppear { login.refresh() }
     }
 
-    /// "Clears caches and logs once a week. Last run 3 days ago."
-    private var weeklyNote: String {
-        var text = "Clears caches and logs once a week, quietly."
-        if let last = UserDefaults.standard.object(forKey: QuickActions.lastCleanKey) as? Date {
-            text += " Last run \(last.formatted(.relative(presentation: .named)))."
-        }
-        return text
+    /// "Last run 3 days ago", once Quick Clean has run.
+    private var lastRun: String? {
+        guard let last = UserDefaults.standard.object(forKey: QuickActions.lastCleanKey) as? Date else { return nil }
+        return "Last run \(last.formatted(.relative(presentation: .named)))"
     }
 
-    private func row<Control: View>(_ title: String, @ViewBuilder control: () -> Control) -> some View {
+    private func row<Control: View>(_ title: String, help: String? = nil,
+                                    @ViewBuilder control: () -> Control) -> some View {
         HStack {
-            Text(title).font(Theme.body.weight(.medium)).foregroundStyle(Theme.ink)
+            Text(title).font(Theme.body.weight(.medium)).foregroundStyle(Theme.ink).help(help ?? "")
             Spacer(minLength: 16)
             control()
         }

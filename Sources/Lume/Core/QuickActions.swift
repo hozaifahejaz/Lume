@@ -27,7 +27,7 @@ final class QuickActions: ObservableObject {
             running = nil
             guard let freed else { return }
             UserDefaults.standard.set(Date(), forKey: Self.lastCleanKey)
-            let text = freed > 0 ? "Freed \(freed.bytes)" : "Nothing to clear right now"
+            let text = freed > 0 ? "Freed \(freed.bytes)" : "Nothing to clear"
             cleanResult = text
             onCleaned?()
             Self.notify(title: "Quick Clean", body: text)

@@ -31,8 +31,7 @@ enum Alerts {
     /// From DiskSpace, every 30 seconds.
     static func check(disk: DiskStats) {
         guard enabled, disk.nearlyFull else { return }
-        post("Your disk is nearly full", "\(disk.available.bytes) left. Clean in Lume can clear caches and old files.",
-             key: "alertedDisk")
+        post("Disk nearly full", "\(disk.available.bytes) available", key: "alertedDisk")
     }
 
     /// From SystemMonitor, on every sample.
@@ -41,8 +40,7 @@ enum Alerts {
         let since = pressureSince ?? Date()
         pressureSince = since
         guard enabled, Date().timeIntervalSince(since) >= pressureLimit else { return }
-        post("Memory pressure is \(pressure.word)", "Quitting apps you aren’t using frees the most memory.",
-             key: "alertedPressure")
+        post("Memory pressure is \(pressure.word)", "For more than five minutes", key: "alertedPressure")
     }
 
     /// Once per day per alert.

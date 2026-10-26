@@ -38,7 +38,7 @@ struct CommandBar: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(Theme.tertiary)
-                TextField("Go to or do…", text: $query.value)
+                TextField("Search", text: $query.value)
                     .textFieldStyle(.plain)
                     .font(.system(size: 17))
                     .foregroundStyle(Theme.ink)

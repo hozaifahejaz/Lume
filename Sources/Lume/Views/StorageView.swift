@@ -39,8 +39,12 @@ struct StorageView: View {
                     HStack(spacing: 12) {
                         switch mode.value {
                         case .folders: Breadcrumbs(path: scanner.path) { scanner.goBack(to: $0) }
-                        case .largeFiles: sectionTitle("Over 1 GB, not opened in six months")
-                        case .downloads: sectionTitle("Installers and archives in Downloads, over 30 days old")
+                        case .largeFiles:
+                            sectionTitle(summary(largeFiles))
+                                .help("Over 1 GB and not opened in six months")
+                        case .downloads:
+                            sectionTitle(summary(downloads))
+                                .help("Disk images, installers and archives in Downloads for over 30 days")
                         }
                         Spacer()
                         if scanner.isScanning && mode.value == .folders {
@@ -62,13 +66,11 @@ struct StorageView: View {
                     switch mode.value {
                     case .folders: folderList
                     case .largeFiles:
-                        SweepList(sweep: largeFiles,
-                                  empty: "No files over 1 GB that you haven’t opened in six months.") { file in
+                        SweepList(sweep: largeFiles) { file in
                             file.date.map { "Last opened \($0.ago)" } ?? ""
                         }
                     case .downloads:
-                        SweepList(sweep: downloads,
-                                  empty: "No disk images, installers or archives older than 30 days in Downloads.") { file in
+                        SweepList(sweep: downloads) { file in
                             file.date.map { "Downloaded \($0.ago)" } ?? ""
                         }
                     }
@@ -98,6 +100,14 @@ struct StorageView: View {
         }
     }
 
+    /// "3 files · 4.2 GB", or the mode's name before anything is found.
+    private func summary(_ sweep: FileSweep) -> String {
+        let name = mode.value.rawValue
+        guard !sweep.files.isEmpty else { return name }
+        let total = sweep.files.reduce(0) { $0 + $1.size }
+        return "\(name) · \(sweep.files.count == 1 ? "1 file" : "\(sweep.files.count) files") · \(total.bytes)"
+    }
+
     private func sectionTitle(_ title: String) -> some View {
         Text(title).font(Theme.sectionTitle).foregroundStyle(Theme.ink).lineLimit(1)
     }
@@ -106,7 +116,7 @@ struct StorageView: View {
                     let rows = scanner.visible
                     Group {
                         if rows.isEmpty && !scanner.isScanning {
-                            Text(scanner.path.isEmpty ? "Nothing measured yet." : "This folder is empty.")
+                            Text(scanner.path.isEmpty ? "Nothing measured" : "Empty")
                                 .font(Theme.body)
                                 .foregroundStyle(Theme.secondary)
                                 .padding(8)
@@ -122,7 +132,7 @@ struct StorageView: View {
 
                     if scanner.protectedSkipped && scanner.path.isEmpty {
                         HStack(spacing: 6) {
-                            Text("Some private folders, such as Mail, can’t be measured without Full Disk Access.")
+                            Text("Some folders need Full Disk Access.")
                                 .foregroundStyle(Theme.tertiary)
                             Link("Open Settings", destination: URL(
                                 string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!)

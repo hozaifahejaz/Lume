@@ -15,9 +15,6 @@ struct MemoryView: View {
                     HStack {
                         Text("Apps using the most memory").font(Theme.sectionTitle).foregroundStyle(Theme.ink)
                         Spacer()
-                        Text("Quitting apps you aren’t using frees the most.")
-                            .font(Theme.caption)
-                            .foregroundStyle(Theme.tertiary)
                     }
                     .padding(.horizontal, 8)
                     .frame(height: 24)
@@ -57,16 +54,15 @@ private struct MemoryHeader: View {
 
     private var title: String {
         switch monitor.pressure {
-        case .normal: return "Memory pressure is normal."
-        case .warning: return "Memory pressure is elevated."
-        case .critical: return "Memory pressure is high."
+        case .normal: return "Memory pressure is normal"
+        case .warning: return "Memory pressure is elevated"
+        case .critical: return "Memory pressure is high"
         }
     }
 
     /// "Memory used" is Activity Monitor's own term for app, wired and compressed memory together.
     private var subtitle: String {
-        "Memory used \(monitor.memory.used.bytes) of \(monitor.memory.total.bytes). "
-            + "macOS keeps memory full on purpose and frees it the moment it’s needed."
+        "Memory used \(monitor.memory.used.bytes) of \(monitor.memory.total.bytes)"
     }
 }
 
@@ -77,7 +73,6 @@ private struct MemoryBreakdown: View {
 
     private struct Part: Identifiable {
         let id: String
-        let caption: String
         let bytes: UInt64
         let color: Color
     }
@@ -85,10 +80,10 @@ private struct MemoryBreakdown: View {
     var body: some View {
         let memory = monitor.memory
         let parts = [
-            Part(id: "App memory", caption: "Open apps and their data", bytes: memory.app, color: Theme.storageTones[0]),
-            Part(id: "Wired memory", caption: "Held by macOS itself", bytes: memory.wired, color: Theme.storageTones[1]),
-            Part(id: "Compressed", caption: "Squeezed to make room", bytes: memory.compressed, color: Theme.storageTones[2]),
-            Part(id: "Cached files", caption: "Given back when needed", bytes: memory.cached, color: Theme.storageOther),
+            Part(id: "App memory", bytes: memory.app, color: Theme.storageTones[0]),
+            Part(id: "Wired memory", bytes: memory.wired, color: Theme.storageTones[1]),
+            Part(id: "Compressed", bytes: memory.compressed, color: Theme.storageTones[2]),
+            Part(id: "Cached files", bytes: memory.cached, color: Theme.storageOther),
         ]
         GlassPanel(fill: false) {
             VStack(alignment: .leading, spacing: 16) {
@@ -107,7 +102,6 @@ private struct MemoryBreakdown: View {
                                 .foregroundStyle(Theme.ink)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.7)
-                            Text(part.caption).font(Theme.caption).foregroundStyle(Theme.tertiary).lineLimit(1)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -121,12 +115,14 @@ private struct MemoryBreakdown: View {
                         .font(Theme.caption)
                         .foregroundStyle(Theme.secondary)
                     Spacer()
-                    // The last Free RAM result in place of the note, in the darker caption colour.
-                    Text(actions.memoryResult ?? "Free RAM empties the file cache. It rarely makes a Mac faster.")
-                        .font(Theme.caption)
-                        .foregroundStyle(actions.memoryResult == nil ? Theme.tertiary : Theme.secondary)
-                        .lineLimit(1)
-                        .contentTransition(.opacity)
+                    // The last Free RAM result.
+                    if let result = actions.memoryResult {
+                        Text(result)
+                            .font(Theme.caption)
+                            .foregroundStyle(Theme.secondary)
+                            .lineLimit(1)
+                            .transition(.opacity)
+                    }
                 }
             }
         }

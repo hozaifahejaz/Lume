@@ -9,8 +9,7 @@ struct StartupView: View {
         let enabled = items.items.filter(\.isEnabled).count
 
         VStack(alignment: .leading, spacing: Theme.gap) {
-            PageHeader(title: "\(enabled) of \(items.items.count) helpers open at login.",
-                       subtitle: "Background agents that start when you log in. Turning one off moves its file aside.") {
+            PageHeader(title: "\(enabled) of \(items.items.count) helpers open at login") {
                 Button { items.openLoginItemsSettings() } label: {
                     Label("Login Items", systemImage: "gearshape")
                 }
@@ -46,7 +45,7 @@ struct StartupView: View {
             .frame(height: 24)
 
         if rows.isEmpty {
-            Text("Nothing here.")
+            Text("None")
                 .font(Theme.body)
                 .foregroundStyle(Theme.secondary)
                 .padding(8)
