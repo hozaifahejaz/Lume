@@ -8,63 +8,26 @@ struct CleanView: View {
     @StateObject private var confirming = ViewState(false)
 
     var body: some View {
-        let general = cleaner.categories.filter { $0.group == .general }
-        let developer = cleaner.categories.filter { $0.group == .developer }
-
         VStack(alignment: .leading, spacing: Theme.gap) {
             PageHeader(title: headline)
 
-            HStack(alignment: .top, spacing: Theme.gap) {
-                GlassPanel {
-                    VStack(alignment: .leading, spacing: 4) {
-                        sectionTitle("What to clean")
-                        ForEach(Array(general.enumerated()), id: \.element.id) { index, category in
-                            if index > 0 { Hairline().padding(.leading, 48) }
-                            row(category)
-                        }
-                        if !developer.isEmpty {
-                            sectionTitle("Developer").padding(.top, 12)
-                            ForEach(Array(developer.enumerated()), id: \.element.id) { index, category in
-                                if index > 0 { Hairline().padding(.leading, 48) }
-                                row(category, compact: true)
-                            }
-                        }
-                        if !cleaner.unreadable.isEmpty {
-                            Label("Some folders need Full Disk Access.", systemImage: "lock")
-                                .font(Theme.caption)
-                                .foregroundStyle(Theme.tertiary)
-                                .padding(.horizontal, 8)
-                                .padding(.top, 12)
-                        }
-                    }
+            // Both panels hug their content; once the Developer rows outgrow the window,
+            // they fill it instead and only the list scrolls, as on the other pages.
+            ViewThatFits(in: .vertical) {
+                HStack(alignment: .top, spacing: Theme.gap) {
+                    GlassPanel { categoryList }
+                    GlassPanel { summary }.frame(width: 280)
                 }
+                .fixedSize(horizontal: false, vertical: true)
 
-                GlassPanel {
-                    VStack(spacing: 4) {
-                        Spacer(minLength: 0)
-                        Text(eyebrow).font(Theme.caption).foregroundStyle(Theme.secondary)
-                        Text(bigNumber)
-                            .font(Theme.number)
-                            .foregroundStyle(Theme.ink)
-                            .contentTransition(.numericText(countsDown: !isDone))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.6)
-                        action.padding(.top, 20)
-                        Spacer(minLength: 0)
-                        if let tally {
-                            Text(tally)
-                                .font(Theme.caption)
-                                .foregroundStyle(Theme.tertiary)
-                                .multilineTextAlignment(.center)
-                                .contentTransition(.numericText())
-                        }
+                HStack(alignment: .top, spacing: Theme.gap) {
+                    GlassPanel {
+                        ScrollView { categoryList }.quietScroll()
                     }
-                    .frame(maxWidth: .infinity)
+                    GlassPanel { summary }.frame(width: 280)
                 }
-                .frame(width: 280)
+                .frame(maxHeight: .infinity)
             }
-            // Both panels take the height of the taller one's content, not the whole window.
-            .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
         .animation(.smooth(duration: 0.6), value: cleaner.phase)
@@ -92,6 +55,55 @@ struct CleanView: View {
         .confirmationDialog("Clean \(cleaner.selectedTotal.bytes)?", isPresented: $confirming.value) {
             Button("Clean", role: .destructive) { Task { await cleaner.clean() } }
         }
+    }
+
+    private var categoryList: some View {
+        let general = cleaner.categories.filter { $0.group == .general }
+        let developer = cleaner.categories.filter { $0.group == .developer }
+        return VStack(alignment: .leading, spacing: 4) {
+            sectionTitle("What to clean")
+            ForEach(Array(general.enumerated()), id: \.element.id) { index, category in
+                if index > 0 { Hairline().padding(.leading, 48) }
+                row(category)
+            }
+            if !developer.isEmpty {
+                sectionTitle("Developer").padding(.top, 12)
+                ForEach(Array(developer.enumerated()), id: \.element.id) { index, category in
+                    if index > 0 { Hairline().padding(.leading, 48) }
+                    row(category, compact: true)
+                }
+            }
+            if !cleaner.unreadable.isEmpty {
+                Label("Some folders need Full Disk Access.", systemImage: "lock")
+                    .font(Theme.caption)
+                    .foregroundStyle(Theme.tertiary)
+                    .padding(.horizontal, 8)
+                    .padding(.top, 12)
+            }
+        }
+    }
+
+    private var summary: some View {
+        VStack(spacing: 4) {
+            Spacer(minLength: 0)
+            Text(eyebrow).font(Theme.caption).foregroundStyle(Theme.secondary)
+            Text(bigNumber)
+                .font(Theme.number)
+                .foregroundStyle(Theme.ink)
+                .contentTransition(.numericText(countsDown: !isDone))
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            action.padding(.top, 20)
+            Spacer(minLength: 0)
+            if let tally {
+                Text(tally)
+                    .font(Theme.caption)
+                    .foregroundStyle(Theme.tertiary)
+                    .multilineTextAlignment(.center)
+                    .contentTransition(.numericText())
+            }
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private var isDone: Bool {
