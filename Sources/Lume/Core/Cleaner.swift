@@ -5,7 +5,7 @@ import AppKit
 struct JunkCategory: Identifiable, Hashable {
     enum Group { case general, developer }
     /// Leftovers gathered from many projects instead of the contents of one folder.
-    enum Finder { case remotionCaches, remotionRenders }
+    enum Finder { case buildOutput, dependencies, remotionCaches, remotionRenders }
 
     let id: String
     let name: String
@@ -61,7 +61,15 @@ struct JunkCategory: Identifiable, Hashable {
             JunkCategory(id: "archives", name: "Xcode archives", detail: "Old app builds; keep any you still need",
                          symbol: "archivebox", url: developer.appending(path: "Xcode/Archives"),
                          group: .developer, onByDefault: false),
-            // Found in every Remotion project; their temporary bundles already count as Temporary files.
+            // Gathered from projects across the Mac. Only idle ones are touched; Remotion's temporary bundles
+            // already count as Temporary files.
+            JunkCategory(id: "buildoutput", name: "Project build output", detail: "Build folders of projects idle a month",
+                         symbol: "hammer.circle", url: home, group: .developer, minAge: 30 * day,
+                         finder: .buildOutput),
+            JunkCategory(id: "dependencies", name: "Project dependencies",
+                         detail: "node_modules of projects idle a month",
+                         symbol: "shippingbox.circle", url: home, group: .developer, onByDefault: false,
+                         minAge: 30 * day, finder: .dependencies),
             JunkCategory(id: "remotion", name: "Remotion caches", detail: "Projects idle a week, rebuilt on next render",
                          symbol: "film", url: home, group: .developer, minAge: 7 * day, finder: .remotionCaches),
             JunkCategory(id: "remotionrenders", name: "Remotion renders",
@@ -252,15 +260,18 @@ final class Cleaner: ObservableObject {
     private enum Removable { case items([URL]), missing, unreadable }
 
     /// What cleaning a category would remove: the children of its folder that aren't kept,
-    /// or for Remotion the stale leftovers of every project. Missing when there's nowhere to look.
+    /// or what idle projects leave behind. Missing when there's nowhere to look.
     nonisolated private static func removable(in category: JunkCategory, keep: [String]) -> Removable {
         if let finder = category.finder {
-            guard let projects = RemotionProjects.roots(), !projects.isEmpty else { return .missing }
             let age = category.minAge ?? 0
+            let found: [URL]?
             switch finder {
-            case .remotionCaches: return .items(RemotionProjects.caches(in: projects, idle: age))
-            case .remotionRenders: return .items(RemotionProjects.renders(in: projects, age: age))
+            case .buildOutput: found = DevProjects.buildOutput(idle: age)
+            case .dependencies: found = DevProjects.dependencies(idle: age)
+            case .remotionCaches: found = DevProjects.remotionCaches(idle: age)
+            case .remotionRenders: found = DevProjects.remotionRenders(age: age)
             }
+            return found.map { .items($0) } ?? .missing
         }
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: category.url.path, isDirectory: &isDirectory),
