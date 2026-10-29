@@ -4,6 +4,8 @@ import AppKit
 /// A folder whose contents are safe to remove; macOS and apps rebuild them on demand.
 struct JunkCategory: Identifiable, Hashable {
     enum Group { case general, developer }
+    /// Leftovers gathered from many projects instead of the contents of one folder.
+    enum Finder { case remotionCaches, remotionRenders }
 
     let id: String
     let name: String
@@ -16,6 +18,7 @@ struct JunkCategory: Identifiable, Hashable {
     var minAge: TimeInterval? = nil
     /// A general row that isn't shown at all when its folder doesn't exist, instead of "Not found".
     var hiddenWhenMissing = false
+    var finder: Finder? = nil
 
     static var all: [JunkCategory] {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -58,6 +61,13 @@ struct JunkCategory: Identifiable, Hashable {
             JunkCategory(id: "archives", name: "Xcode archives", detail: "Old app builds; keep any you still need",
                          symbol: "archivebox", url: developer.appending(path: "Xcode/Archives"),
                          group: .developer, onByDefault: false),
+            // Found in every Remotion project; their temporary bundles already count as Temporary files.
+            JunkCategory(id: "remotion", name: "Remotion caches", detail: "Projects idle a week, rebuilt on next render",
+                         symbol: "film", url: home, group: .developer, minAge: 7 * day, finder: .remotionCaches),
+            JunkCategory(id: "remotionrenders", name: "Remotion renders",
+                         detail: "Exports untouched a month; keep any you need",
+                         symbol: "film.stack", url: home, group: .developer, onByDefault: false,
+                         minAge: 30 * day, finder: .remotionRenders),
         ]
     }
 }
@@ -150,19 +160,11 @@ final class Cleaner: ObservableObject {
         await withTaskGroup(of: (String, Result).self) { group in
             for category in all {
                 group.addTask {
-                    let url = category.url
-                    var isDirectory: ObjCBool = false
-                    guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
-                          isDirectory.boolValue else {
-                        return (category.id, .missing)
+                    switch Self.removable(in: category, keep: keep) {
+                    case .items(let items): return (category.id, .size(items.reduce(0) { $0 + DiskSize.of($1) }))
+                    case .missing: return (category.id, .missing)
+                    case .unreadable: return (category.id, .unreadable)
                     }
-                    guard let children = try? FileManager.default.contentsOfDirectory(
-                        at: url, includingPropertiesForKeys: nil
-                    ) else {
-                        return (category.id, .unreadable)
-                    }
-                    let removable = children.filter { !Self.isKept($0, in: category, keep: keep) }
-                    return (category.id, .size(removable.reduce(0) { $0 + DiskSize.of($1) }))
                 }
             }
             for await (id, result) in group { results[id] = result }
@@ -247,13 +249,34 @@ final class Cleaner: ObservableObject {
         return keep.contains { name == $0 || name.hasPrefix($0 + ".") }
     }
 
-    /// Removes the children of a folder, leaving the folder itself in place.
+    private enum Removable { case items([URL]), missing, unreadable }
+
+    /// What cleaning a category would remove: the children of its folder that aren't kept,
+    /// or for Remotion the stale leftovers of every project. Missing when there's nowhere to look.
+    nonisolated private static func removable(in category: JunkCategory, keep: [String]) -> Removable {
+        if let finder = category.finder {
+            guard let projects = RemotionProjects.roots(), !projects.isEmpty else { return .missing }
+            let age = category.minAge ?? 0
+            switch finder {
+            case .remotionCaches: return .items(RemotionProjects.caches(in: projects, idle: age))
+            case .remotionRenders: return .items(RemotionProjects.renders(in: projects, age: age))
+            }
+        }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: category.url.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else { return .missing }
+        guard let children = try? FileManager.default.contentsOfDirectory(
+            at: category.url, includingPropertiesForKeys: nil
+        ) else { return .unreadable }
+        return .items(children.filter { !isKept($0, in: category, keep: keep) })
+    }
+
+    /// Removes what `removable` finds, leaving the folder itself in place.
     /// Items that are in use or protected are skipped silently.
     nonisolated private static func emptyContents(of category: JunkCategory, keep: [String]) {
-        let fm = FileManager.default
-        guard let children = try? fm.contentsOfDirectory(at: category.url, includingPropertiesForKeys: nil) else { return }
-        for child in children where !isKept(child, in: category, keep: keep) {
-            try? fm.removeItem(at: child)
+        guard case .items(let items) = removable(in: category, keep: keep) else { return }
+        for item in items {
+            try? FileManager.default.removeItem(at: item)
         }
     }
 }
