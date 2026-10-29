@@ -89,6 +89,7 @@ enum DevProjects {
     private static let remotionConfigs = ["remotion.config.ts", "remotion.config.js", "remotion.config.mjs"]
 
     private static func idleOnes(_ projects: [URL], for duration: TimeInterval) -> [URL] {
+        guard duration > 0 else { return projects }
         let cutoff = Date().addingTimeInterval(-duration)
         return projects.filter { lastActive($0).map { $0 < cutoff } ?? false }
     }

@@ -61,21 +61,21 @@ struct JunkCategory: Identifiable, Hashable {
             JunkCategory(id: "archives", name: "Xcode archives", detail: "Old app builds; keep any you still need",
                          symbol: "archivebox", url: developer.appending(path: "Xcode/Archives"),
                          group: .developer, onByDefault: false),
-            // Gathered from projects across the Mac. Only idle ones are touched; Remotion's temporary bundles
+            // Gathered from projects across the Mac, active ones included, so all of it shows at once.
+            // Off by default so Quick Clean never breaks a project mid-work; Remotion's temporary bundles
             // already count as Temporary files.
-            JunkCategory(id: "buildoutput", name: "Project build output", detail: "Build folders of projects idle a month",
-                         symbol: "hammer.circle", url: home, group: .developer, minAge: 30 * day,
+            JunkCategory(id: "buildoutput", name: "Project build output", detail: "Build folders, made again on next build",
+                         symbol: "hammer.circle", url: home, group: .developer, onByDefault: false,
                          finder: .buildOutput),
-            JunkCategory(id: "dependencies", name: "Project dependencies",
-                         detail: "node_modules of projects idle a month",
+            JunkCategory(id: "dependencies", name: "Project dependencies", detail: "node_modules, put back by npm install",
                          symbol: "shippingbox.circle", url: home, group: .developer, onByDefault: false,
-                         minAge: 30 * day, finder: .dependencies),
-            JunkCategory(id: "remotion", name: "Remotion caches", detail: "Projects idle a week, rebuilt on next render",
-                         symbol: "film", url: home, group: .developer, minAge: 7 * day, finder: .remotionCaches),
-            JunkCategory(id: "remotionrenders", name: "Remotion renders",
-                         detail: "Exports untouched a month; keep any you need",
+                         finder: .dependencies),
+            JunkCategory(id: "remotion", name: "Remotion caches", detail: "Browser and bundles, rebuilt on next render",
+                         symbol: "film", url: home, group: .developer, onByDefault: false,
+                         finder: .remotionCaches),
+            JunkCategory(id: "remotionrenders", name: "Remotion renders", detail: "Rendered videos; keep any you still need",
                          symbol: "film.stack", url: home, group: .developer, onByDefault: false,
-                         minAge: 30 * day, finder: .remotionRenders),
+                         finder: .remotionRenders),
         ]
     }
 }
